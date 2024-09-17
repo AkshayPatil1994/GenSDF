@@ -8,14 +8,14 @@ program sdfgenerator
     real(dp), allocatable, dimension(:,:) :: vertices
     integer, allocatable, dimension(:,:) :: faces
     integer :: num_faces, num_vertices
-    
     ! Bounding related data
-    real(dp), dimension(3) :: bbox_min, bbox_max
-    ! Cartesian grid
-    real(dp), allocatable :: x(:), y(:), z(:)
-    real(dp) :: dx, dy, dz
+    real(dp), dimension(3) :: bbox_min, bbox_max  
     ! Min-Max bounds for x, y, and z
     integer :: sx, ex, sy, ey, sz, ez
+    ! Arrays that store narrow band indices
+    logical, allocatable, dimension(:,:,:) :: narrowmask
+    integer, allocatable, dimension(:,:) :: narrowbandindices
+    integer :: numberofnarrowpoints
     ! Data structure for masking
     real(dp), dimension(3, 19) :: directions
     real(dp), allocatable, dimension(:,:,:) :: pointinside
@@ -24,10 +24,10 @@ program sdfgenerator
     logical :: intersect
     real(dp) :: t, u, v 
     ! Data for distance
-    real(dp) :: setsign
-    real(dp) :: distance_v1, distance_v2, distance_v3, testdata, previoustestdata    
+    real(dp) :: setsign, sdfresolution
+    real(dp) :: distance_v1, testdata, previoustestdata    
     ! Iterator
-    integer :: i, j, k, faceid, cid
+    integer :: i, j, k, faceid, cid, point_tracker, vertexid, pbarwidth
     ! Time loggers
     real(dp) :: time1, time2, elapsedTime
     !
@@ -35,34 +35,12 @@ program sdfgenerator
     !
     ! Log CPU time at the start
     call cpu_time(time1)
-    ! Define the input file name
-    inputfilename = 'sphere.obj'
-    ! Define the grid points
-    Nx = 512
-    Ny = 256
-    Nz = 128
-    Lx = 30.0
-    Ly = 10.0
-    Lz = 8.0
+    ! Read the input file
+    call read_inputfile()
+    ! Read the grid
+    call read_cans_grid()
     ! Allocate memory for the grid
-    allocate(x(Nx),y(Ny),z(Nz))
-    allocate(pointinside(Nx,Ny,Nz))
-    print *, "*** Setting up grid ***"
-    dx = Lx/Nx
-    dy = Ly/Ny
-    dz = Lz/Nz
-    x(1) = 0.0
-    do i=2,Nx
-        x(i) = x(i-1) + dx
-    end do
-    y(1) = 0.0
-    do i=2,Ny
-        y(i) = y(i-1) + dy 
-    end do
-    z(1) = 0.0
-    do i=2,Nz
-        z(i) = z(i-1) + dz 
-    end do
+    allocate(pointinside(nx,ny,nz))
     ! Read the OBJ file
     call read_obj(inputfilename, vertices, faces, num_vertices, num_faces)
     ! Query the bounding box
@@ -73,7 +51,10 @@ program sdfgenerator
     print *, "Geometry has ",num_faces, "number of faces.."
     print *, "Geometry has ",num_vertices, "number of vertices.."
     ! Use bounding box extents plus a small value (order 5*grid size) as control points
-    call tagminmax(x,y,z,bbox_min,bbox_max,Nx,Ny,Nz,dx,dy,dz,sx,ex,sy,ey,sz,ez)
+    ! Note: For z the buffer is 5*smallest grid point
+    call tagminmax(x,y,z,bbox_min,bbox_max,Nx,Ny,Nz,dx,dy,dz(2),sx,ex,sy,ey,sz,ez)
+    ! Now allocate the narrow band indices search array
+    allocate(narrowmask(nx,ny,nz))
     ! Generate the coorindate directions
     call generate_directions(directions)
     ! Log CPU time at the end of pre-processing
@@ -82,52 +63,81 @@ program sdfgenerator
     print *, "- - - - - - - - Finished Pre-Processing in ", elapsedTime, "seconds..."
     ! Set a required value outside the bounding box
     pointinside = 100.0
+    sdfresolution = 5.0
+    pbarwidth = 30
     ! Loop over all data 
+    print *, "*** 1st - Pass: Distance calculation ***"
     call cpu_time(time1)        ! Log CPU time at the start of the operation
+    ! First compute the scalar distance
     do k=sz,ez
-        call show_progress((k-sz),(ez-sz),80)
+        call show_progress((k-sz),(ez-sz),pbarwidth)
         do j=sy,ey
             do i=sx,ex
                 querypoint = (/x(i),y(j),z(k)/)
-                intersection_count = 0
                 previoustestdata = 1e10
                 testdata = 1e10
-                do cid=1,numberofrays                                       
-                    do faceid=1,num_faces
-                        ! Each face has three vertices
-                        v1 = faces(1,faceid)
-                        v2 = faces(2,faceid)
-                        v3 = faces(3,faceid)
-                        call ray_triangle_intersection(querypoint, directions(:,cid), vertices(:,v1), vertices(:,v2), vertices(:,v3), t, u, v, intersect)        
-                        if (intersect) then
-                            intersection_count = intersection_count + 1
-                        end if
-                        ! Compute the distance
-                        distance_v1 = sqrt( (x(i) - vertices(1,v1))*(x(i) - vertices(1,v1)) &
-                                        +   (y(j) - vertices(2,v1))*(y(j) - vertices(2,v1)) &
-                                        +   (z(k) - vertices(3,v1))*(z(k) - vertices(3,v1)) & 
-                                          )
-                        distance_v2 = sqrt( (x(i) - vertices(1,v2))*(x(i) - vertices(1,v2)) &
-                                        +   (y(j) - vertices(2,v2))*(y(j) - vertices(2,v2)) &
-                                        +   (z(k) - vertices(3,v2))*(z(k) - vertices(3,v2)) & 
-                                          )
-                        distance_v3 = sqrt( (x(i) - vertices(1,v3))*(x(i) - vertices(1,v3)) &
-                                        +   (y(j) - vertices(2,v3))*(y(j) - vertices(2,v3)) &
-                                        +   (z(k) - vertices(3,v3))*(z(k) - vertices(3,v3)) & 
-                                          )
-                        testdata = min(distance_v1,distance_v2,distance_v3,previoustestdata)
-                        ! Assign current testdata to previoustestdata
-                        previoustestdata = testdata
-                    end do
+                do vertexid=1,num_vertices
+                    ! Each face has three vertices
+                    ! Compute the distance
+                    distance_v1 = sqrt( (x(i) - vertices(1,vertexid))*(x(i) - vertices(1,vertexid)) &
+                                    +   (y(j) - vertices(2,vertexid))*(y(j) - vertices(2,vertexid)) &
+                                    +   (z(k) - vertices(3,vertexid))*(z(k) - vertices(3,vertexid)) & 
+                                        )                
+                    testdata = min(distance_v1,previoustestdata)
+                    ! Assign current testdata to previoustestdata
+                    previoustestdata = testdata
                 end do
-                if(mod(intersection_count,2)>0) then
-                    setsign = -1.0
-                else
-                    setsign = 1.0
-                endif
-                pointinside(i,j,k) = setsign*testdata                
+                pointinside(i,j,k) = testdata                
             end do
         end do            
+    end do   
+
+    print *, "*** 2nd - Pass: Narrow band tagging"
+    ! Check indices for where values are < sdfresolution*min(dx,dy,dz)
+    narrowmask = pointinside < sdfresolution*min(dx,dy,dz(2))
+    numberofnarrowpoints = count(narrowmask)
+    print *, "Total number of narrow band point: ", numberofnarrowpoints, "of", (ex-sx)*(ey-sy)*(ez-sz), "total points."
+    ! Allocate the values and indices to the narrowbandindices array
+    allocate(narrowbandindices(3,numberofnarrowpoints))
+    point_tracker = 1
+    do k=sz,ez
+        call show_progress((k-sz),(ez-sz),pbarwidth)
+        do j=sy,ey
+            do i=sx,ex
+                if(narrowmask(i,j,k) .eqv. .True.) then
+                    narrowbandindices(:,point_tracker) = (/i,j,k/)
+                    point_tracker = point_tracker + 1
+                endif
+            end do
+        end do
+    end do
+    ! Now compute the ray intersection only for the narrowband points
+    print *, "*** 3rd - Pass: Computing the sign for the distance ***"
+    ! Reset 
+    do point_tracker=1,numberofnarrowpoints
+        call show_progress(point_tracker,numberofnarrowpoints,pbarwidth)
+        querypoint = narrowbandindices(:,point_tracker)
+        intersection_count = 0
+        previoustestdata = 1e10
+        testdata = 1e10
+        do cid=1,numberofrays                                       
+            do faceid=1,num_faces
+                ! Each face has three vertices
+                v1 = faces(1,faceid)
+                v2 = faces(2,faceid)
+                v3 = faces(3,faceid)
+                call ray_triangle_intersection(querypoint, directions(:,cid), vertices(:,v1), vertices(:,v2), vertices(:,v3), t, u, v, intersect)        
+                if (intersect) then
+                    intersection_count = intersection_count + 1
+                end if        
+            end do
+        end do
+        if(mod(intersection_count,2)>0) then
+            setsign = -1.0
+        else
+            setsign = 1.0
+        endif
+        pointinside(i,j,k) = setsign*pointinside(i,j,k)                          
     end do
     ! Log CPU time at the end of the 
     call cpu_time(time2)
@@ -138,6 +148,10 @@ program sdfgenerator
     ! Write the mask to file
     open(unit=10, file='mask.bin', status='replace', form='unformatted')
     write(10) pointinside
+    close(10)
+    ! Write debugging index files
+    open(unit=10, file='mask_index.bin', status='replace', form='unformatted')
+    write(10) narrowbandindices
     close(10)
     call cpu_time(time2)
     elapsedTime = elapsedTime + (time2-time1)
