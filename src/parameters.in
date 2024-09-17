@@ -1,0 +1,4 @@
+! Name and location of the inputfile
+'data/torus.obj'
+! Number of Rays (Must be odd)
+4
