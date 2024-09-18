@@ -1,6 +1,12 @@
 ! Name and location of the inputfile
 'data/sphere.obj'
 ! Number of Rays
-4
+2
 ! Scalar value (real), sdfresolution (real), progressbarsize (int)  
-100.0 6.0 50
+100.0 2.0 50
+! nx, ny, nz (Computational Grid)
+512 128 128
+! r0 (Origin of the computational grid)
+0.0 0.0 0.0
+! non_uniform_grid
+0
