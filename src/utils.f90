@@ -356,6 +356,14 @@ contains
     ! Local variables
     integer :: i, j, k
 
+    ! Set min and max to domain extents
+    sx = 1
+    ex = nx
+    sy = 1
+    ey = ny
+    sz = 1
+    ez = nz
+    
     do i=1,Nx
       ! Tag min
       if(x(i)<=bbox_min(1)-5*dx) then
