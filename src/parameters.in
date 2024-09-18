@@ -1,4 +1,6 @@
 ! Name and location of the inputfile
-'data/torus.obj'
-! Number of Rays (Must be odd)
+'data/sphere.obj'
+! Number of Rays
 4
+! Scalar value (real), sdfresolution (real), progressbarsize (int)  
+100.0 6.0 50
