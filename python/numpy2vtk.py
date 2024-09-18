@@ -1,3 +1,4 @@
+
 import numpy as np
 
 def write_vtk(array, filename, spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0)):
@@ -32,19 +33,39 @@ def write_vtk(array, filename, spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0)):
                     f.write(f"{array[x, y, z]}\n")
 
 # Example usage
-nx, ny, nz = 512, 256, 128
-filename = 'mask.bin'
+nx, ny, nz = 512, 128, 128
+filename1 = '../src/data/mask.bin'
+filename2 = '../src/data/narrowbandpoints.bin'
 
-x = np.linspace(0,30,nx)
-y = np.linspace(0,10,ny)
-z = np.linspace(0,8,nz)
+x = np.linspace(32/nx,32,nx)
+y = np.linspace(8/nx,8,ny)
+z = np.linspace(8/nx,8,nz)
 
-# Load the data from binary file (assuming float32 precision)
-with open(filename, 'rb') as f:
+# Load the data from binary file 
+with open(filename1, 'rb') as f:
     f.read(4)  # Skip the 4-byte Fortran marker
     sdf = np.fromfile(f, count=nx * ny * nz)
-sdf = np.reshape(sdf, (nx, ny, nz), order='F')  # Reshape with Fortran ordering
-# inside = np.zeros((nx,ny,nz),dtype=np.float64)
-# inside[sdf%2>0] = 1.0
+sdf = np.reshape(sdf, (nx, ny, nz), order='F')
+
+# Load the data from binary file 
+with open(filename2, 'rb') as f:
+    f.read(4)  # Skip the 4-byte Fortran marker
+    # First read the number of points
+    numpoints = np.fromfile(f,count=1,dtype=np.int32)
+    print("Total number of points:",numpoints)
+    # Now read the points
+    points = np.zeros((3,numpoints[0]),dtype=np.int32)
+    for i in range(0,numpoints[0]):
+        dummy = np.fromfile(f, count=3,dtype=np.int32)
+        points[0,i] = dummy[0]
+        points[1,i] = dummy[1]
+        points[2,i] = dummy[2]        
+points[1,0] = points[1,1]
 # Write the array to VTK file
-write_vtk(sdf, "output.vtk", spacing=(x[-1]/nx, y[-1]/ny, z[-1]/nz))
+point_indices = np.zeros((nx,ny,nz),dtype=np.int32)
+for i in range(0,numpoints[0]):
+    point_indices[points[2,i],points[1,i],points[0,i]] = 1
+
+# Write data to file
+write_vtk(sdf, "data/sdf.vtk", spacing=(32/nx, 8/ny, 8/nz))
+write_vtk(point_indices, "data/points.vtk", spacing=(32/nx, 8/ny, 8/nz))
