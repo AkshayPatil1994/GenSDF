@@ -3,7 +3,9 @@ module utils
     integer, parameter, public :: dp = selected_real_kind(15,307)
     character(len=512),  public :: inputfilename
     integer, public :: nx, ny, nz, numberofrays
-    real(dp), public :: lx, ly, lz
+    real(dp), public :: lx, ly, lz, dx, dy
+    real(dp), allocatable, dimension(:), public :: dz
+    real(dp), allocatable, dimension(:), public :: x, y, z
 
 contains
 
@@ -22,15 +24,64 @@ contains
         read(iunit,*,iostat=ierr) dummyline
         read(iunit,*,iostat=ierr) inputfilename
         read(iunit,*,iostat=ierr) dummyline
-        read(iunit,*,iostat=ierr) nx, ny, nz
-        read(iunit,*,iostat=ierr) dummyline
-        read(iunit,*,iostat=ierr) lx, ly, lz
-        read(iunit,*,iostat=ierr) dummyline
         read(iunit,*,iostat=ierr) numberofrays
+        ! Force numberofrays is odd
+        if(mod(numberofrays,2)==0) then
+          numberofrays = numberofrays + 1
+          if(numberofrays > 19) then
+            numberofrays = 19
+            print *, "Number of rays forced within limit to", numberofrays
+          else
+            print *, "Number of rays edited:", numberofrays
+          endif
+        endif
+
       else
         error stop "parameters.in file encountered a problem!"
       end if
   end subroutine read_inputfile
+
+  subroutine read_cans_grid()
+    !
+    ! This subroutine reads the CaNS grid
+    !
+    implicit none
+    ! Local variables
+    integer :: i
+    real(dp), allocatable, dimension(:,:) :: zdata
+    ! First read the geometry file
+    open(unit=10, file='data/geometry.out', status='old', action='read')
+    read(10,*) nx, ny, nz
+    read(10,*) lx, ly, lz
+    close(10)
+    ! Allocate x, y, and z arrays based on grid size
+    allocate(x(nx),y(ny),z(nz), zdata(5,nz), dz(nz))
+    ! Once the size in z is known, read the grid.out file to get varying z direction
+    open(unit=11, file='data/grid.out', status='old', action='read')
+    ! Read the first line - dummy
+    read(11,*) zdata(:,1) 
+    do i=1,nz
+      read(11,*) zdata(:,i)
+    end do
+    close(11)
+    ! Assign the value of z from zdata
+    z = zdata(2,:)
+    ! Construct x and y arrays
+    dx = lx/nx
+    dy = ly/ny
+    x(1) = dx
+    y(1) = dy
+    do i=2,nx
+      x(i) = x(i-1) + dx
+    end do
+    do i=2,ny
+      y(i) = y(i-1) + dy
+    end do
+    dz = z(1)
+    do i=2,nz
+      dz(i) = z(i) - z(i-1)
+    enddo
+  end subroutine read_cans_grid
 
   subroutine read_obj(filename, vertices, faces, num_vertices, num_faces)
     !
@@ -393,6 +444,127 @@ contains
     directions(:, 19) = (/ 0.0d0, 0.0d0, 0.0d0 /)  ! Optional zero vector for completeness
 
   end subroutine generate_directions
+
+  subroutine compute_scalar_distance(sx,ex,sy,ey,sz,ez,num_vertices,vertices,pointinside)
+    !
+    ! This subroutine computes the scalar distance without a sign tag
+    !
+    implicit none
+    ! Input
+    integer, intent(in) :: sx,ex,sy,ey,sz,ez
+    integer, intent(in) :: num_vertices
+    real(dp), intent(in), dimension(:,:) :: vertices
+    ! Output
+    real(dp), intent(out), dimension(:,:,:) :: pointinside
+    ! Local variable
+    integer :: i, j, k, vertexid
+    real(dp) :: testdata, previoustestdata, distance
+    real(dp), dimension(3) :: querypoint
+    !
+    do k=sz,ez
+      call show_progress((k-sz),(ez-sz),50)
+      do j=sy,ey
+          do i=sx,ex
+              querypoint = (/x(i),y(j),z(k)/)
+              previoustestdata = 1e10
+              testdata = 1e10
+              do vertexid=1,num_vertices
+                  ! Each face has three vertices
+                  ! Compute the distance
+                  distance = sqrt( (x(i) - vertices(1,vertexid))*(x(i) - vertices(1,vertexid)) &
+                                  +   (y(j) - vertices(2,vertexid))*(y(j) - vertices(2,vertexid)) &
+                                  +   (z(k) - vertices(3,vertexid))*(z(k) - vertices(3,vertexid)) & 
+                                      )                
+                  testdata = min(distance,previoustestdata)
+                  ! Assign current testdata to previoustestdata
+                  previoustestdata = testdata
+              end do
+              pointinside(i,j,k) = testdata                
+          end do
+      end do            
+  end do 
+
+  end subroutine compute_scalar_distance
+
+  subroutine tag_narrowband_points(sx,ex,sy,ey,sz,ez,narrowmask,narrowbandindices)
+    !
+    ! This subroutine tags the narrowband points
+    !
+    implicit none
+    ! Input
+    integer, intent(in) :: sx,ex,sy,ey,sz,ez
+    logical, intent(in), dimension(:,:,:) :: narrowmask
+    ! Output
+    integer, intent(inout), dimension(:,:) :: narrowbandindices
+    ! Local variables
+    integer :: i, j, k
+    integer :: point_tracker
+
+    point_tracker = 1
+    do k=sz,ez
+      call show_progress((k-sz),(ez-sz),50)
+      do j=sy,ey
+          do i=sx,ex
+              if(narrowmask(i,j,k) .eqv. .True.) then
+                  narrowbandindices(:,point_tracker) = (/i,j,k/)
+                  point_tracker = point_tracker + 1
+              endif
+          end do
+      end do
+    end do
+
+  end subroutine tag_narrowband_points
+
+
+  subroutine get_signed_distance(num_faces,numberofnarrowpoints,faces,vertices,directions,narrowbandindices,pointinside)
+    ! 
+    ! This subroutine tags a sign for the distance that is pre-computed
+    !
+    implicit none
+    ! Input
+    integer, intent(in) :: numberofnarrowpoints, num_faces
+    integer, intent(in), dimension(:,:) :: narrowbandindices
+    integer, intent(in), dimension(:,:) :: faces
+    real(dp), intent(in), dimension(:,:) :: vertices
+    real(dp), intent(in), dimension(:,:) :: directions 
+    ! Output
+    real(dp), intent(inout), dimension(:,:,:) :: pointinside
+    ! Local variables
+    integer :: point_tracker, cid, faceid, i, j, k
+    integer :: v1, v2, v3
+    integer :: intersection_count
+    real(dp), dimension(3) :: querypoint
+    logical :: intersect
+    real(dp) :: setsign
+    real(dp) :: t, u, v
+
+    point_tracker = 1
+    do point_tracker=1,numberofnarrowpoints
+        call show_progress(point_tracker,numberofnarrowpoints,50)
+        querypoint = narrowbandindices(:,point_tracker)
+        intersection_count = 0
+        do cid=1,numberofrays                                       
+            do faceid=1,num_faces
+                ! Each face has three vertices
+                v1 = faces(1,faceid)
+                v2 = faces(2,faceid)
+                v3 = faces(3,faceid)
+                call ray_triangle_intersection(querypoint, directions(:,cid), vertices(:,v1), vertices(:,v2), vertices(:,v3), t, u, v, intersect)        
+                if (intersect) then
+                    intersection_count = intersection_count + 1
+                end if        
+            end do
+        end do
+        if(mod(intersection_count,2)>0) then
+            setsign = -1.0
+        else
+            setsign = 1.0
+        endif
+        pointinside(i,j,k) = setsign*pointinside(i,j,k)                          
+    end do
+
+  end subroutine get_signed_distance
+
 
   subroutine show_progress(current, total, width)
     ! 
