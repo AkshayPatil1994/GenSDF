@@ -19,15 +19,6 @@ program sdfgenerator
     ! Data structure for masking
     real(dp), dimension(3, 19) :: directions
     real(dp), allocatable, dimension(:,:,:) :: pointinside
-    integer :: v1, v2, v3, intersection_count
-    real(dp), dimension(3) :: querypoint, controlpoint
-    logical :: intersect
-    real(dp) :: t, u, v 
-    ! Data for distance
-    real(dp) :: setsign, sdfresolution
-    real(dp) :: distance, testdata, previoustestdata    
-    ! Iterator
-    integer :: i, j, k, faceid, cid, point_tracker, vertexid, pbarwidth
     ! Time loggers
     real(dp) :: time1, time2, elapsedTime
     !
@@ -62,9 +53,7 @@ program sdfgenerator
     elapsedTime = (time2-time1)
     print *, "- - - - - - - - Finished Pre-Processing in ", elapsedTime, "seconds..."
     ! Set a required value outside the bounding box
-    pointinside = 100.0
-    sdfresolution = 5.0
-    pbarwidth = 30
+    pointinside = scalarvalue
     ! Loop over all data 
     print *, "*** 1st - Pass: Distance calculation ***"
     call cpu_time(time1)        ! Log CPU time at the start of the operation
