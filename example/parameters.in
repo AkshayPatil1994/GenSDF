@@ -1,0 +1,14 @@
+! Name and location of the inputfile
+'data/torus.obj'
+! Number of Rays
+3
+! Scalar value (real), sdfresolution (int), progressbarsize (int)  
+100.0 4 50
+! nx, ny, nz (Computational Grid)
+512 128 128
+! r0 (Origin of the computational grid)
+0.0 0.0 0.0
+! non_uniform_grid
+0
+! GPU threads (decomposed along x | unsed for CPU jobs)
+64
