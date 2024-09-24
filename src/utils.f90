@@ -11,8 +11,8 @@ module utils
     character(len=512),  public :: inputfilename
     ! -- Cartesian grid data --
     integer, public :: nx, ny, nz, numberofrays
-    real(dp), public :: lx, ly, lz, dx, dy
-    real(dp), allocatable, dimension(:), public :: dz
+    real(dp), public :: lx, ly, lz, dx, dy, dx_inverse, dy_inverse
+    real(dp), allocatable, dimension(:), public :: dz, dz_inverse
     real(dp), allocatable, dimension(:), public :: xp, yp, zp, xf, yf, zf
     real(dp), dimension(3), public :: r0
     integer, dimension(3), public :: ng
@@ -110,12 +110,14 @@ contains
     ! Calculate grid spacing
     dl = l / real(npoints, 8)
     dx = dl(1)
+    dx_inverse = 1.0_dp/dx
     dy = dl(2)
+    dy_inverse = 1.0_dp/dy
 
     ! Generate centered grids
     allocate(xin_p(npoints(1)), yin_p(npoints(2)), zin_p(npoints(3)))
     allocate(xin_f(npoints(1)), yin_f(npoints(2)), zin_f(npoints(3)))
-    allocate(dzin(npoints(3)))
+    allocate(dzin(npoints(3)),dz_inverse(npoints(3)))
 
     do iter = 1, npoints(1)
         xin_p(iter) = origin(1) + (iter - 0.5) * dl(1)  ! Centered x grid
@@ -133,8 +135,10 @@ contains
     end do
     ! Compute dz
     dzin(1) = zin_f(1)
+    dz_inverse(1) = 1.0_dp/dzin(1)
     do iter = 2,npoints(3)
       dzin(iter) = zin_f(iter) - zin_f(iter-1)
+      dz_inverse(iter) = 1.0_dp/(zin_f(iter) - zin_f(iter-1))
     end do
 
     ! Non-uniform grid handling
@@ -157,6 +161,7 @@ contains
             zin_f = origin(3) + grid_z8(:,3)
         endif
     endif
+
 
   end subroutine read_cans_grid
 
@@ -556,8 +561,8 @@ contains
         ! Display progress
         call show_progress(vertexid, num_vertices, 50)
         ! Calculate xloc, yloc, zloc (floor based on vertex location)
-        xloc = floor(vertices(1,vertexid) / dx) - sdf_index_add
-        yloc = floor(vertices(2,vertexid) / dy) - sdf_index_add
+        xloc = floor(vertices(1,vertexid) * dx_inverse) - sdf_index_add
+        yloc = floor(vertices(2,vertexid) * dy_inverse) - sdf_index_add
         ! Find zloc such that z(zloc) <= vertices(3,vertexid)
         k = sz
         do while (z(k) <= vertices(3,vertexid))
@@ -575,17 +580,19 @@ contains
 
                     ! Check if indices are within bounds
                     if (sidx >= sx .and. sidx <= ex .and. sidy >= sy .and. sidy <= ey .and. sidz >= sz .and. sidz <= ez) then
-                        local_distance(ii,jj,kk) = (x(sidx) - vertices(1,vertexid))**2 + &
-                                                    (y(sidy) - vertices(2,vertexid))**2 + &
-                                                    (z(sidz) - vertices(3,vertexid))**2  
+                        local_distance(ii,jj,kk) =  (x(sidx) - vertices(1,vertexid))*(x(sidx) - vertices(1,vertexid)) + &
+                                                    (y(sidy) - vertices(2,vertexid))*(y(sidy) - vertices(2,vertexid)) + &
+                                                    (z(sidz) - vertices(3,vertexid))*(z(sidz) - vertices(3,vertexid))  
                         ! Assign the distance if its smaller than previous value
                         pointinside(sidx,sidy,sidz) = min(pointinside(sidx,sidy,sidz),local_distance(ii,jj,kk))                    
                     end if
                 end do
             end do
         end do
-
     end do
+
+    ! Square root of the distance
+    pointinside(sx:ex,sy:ey,sz:ez) = sqrt(pointinside(sx:ex,sy:ey,sz:ez))
 
   end subroutine compute_scalar_distance
 
@@ -698,12 +705,10 @@ contains
     end if
   end subroutine show_progress
   
-  
-#if defined(_ISCUDA)
+#if defined(_ISCUDA)  
   ! --- CUDA RELATED SUBROUTINES & FUNCTIONS --- !
   attributes(global) subroutine get_signed_distance_cuda(x, y, z, numrays, num_faces, numberofnarrowpoints, faces, vertices, directions, narrowbandindices, pointinside)
     implicit none
-
     ! Input
     real(dp), intent(in), dimension(:), device :: x, y, z
     integer, intent(in), device :: numberofnarrowpoints, num_faces, numrays
@@ -711,88 +716,46 @@ contains
     integer, intent(in), dimension(:,:), device :: faces
     real(dp), intent(in), dimension(:,:), device :: vertices
     real(dp), intent(in), dimension(:,:), device :: directions 
-
     ! Output
     real(dp), intent(inout), dimension(:,:,:), device :: pointinside
-
     ! Local variables
     integer :: point_tracker, cid, faceid, i, j, k
     integer :: v1, v2, v3
     integer :: intersection_count
     real(dp), dimension(3) :: querypoint
-    real(dp), dimension(3) :: vertex1, vertex2, vertex3
     logical :: intersect
     real(dp) :: setsign
     real(dp) :: t, u, v
 
-    ! Shared memory for vertices and directions
-    ! Load frequently accessed data into shared memory
-    real(dp), shared, dimension(3, 19) :: shared_directions
-    ! real(dp), shared, dimension(3, 3) :: shared_vertices
-
     ! Get the thread index for parallel execution
     point_tracker = blockIdx%x * blockDim%x + threadIdx%x + 1
 
-    ! Load directions into shared memory
-    if (threadIdx%x < numrays) then
-        shared_directions(:, threadIdx%x) = directions(:, threadIdx%x)
-    endif
-
-    ! Synchronize threads after loading data into shared memory
-    call syncthreads()
-
-    ! Ensure the thread index is within the number of narrowband points
     if (point_tracker <= numberofnarrowpoints) then
-
-        ! Get the narrowband indices
         i = narrowbandindices(1, point_tracker)
         j = narrowbandindices(2, point_tracker)
         k = narrowbandindices(3, point_tracker)
-
-        ! Set the query point
         querypoint = (/x(i), y(j), z(k)/)
-
-        ! Initialize intersection count
         intersection_count = 0
 
-        ! Loop over rays
         do cid = 1, numrays
-
-            ! Loop over faces
             do faceid = 1, num_faces
-
-                ! Load triangle vertices into registers (faster access)
                 v1 = faces(1, faceid)
                 v2 = faces(2, faceid)
                 v3 = faces(3, faceid)
-
-                vertex1 = vertices(:, v1)
-                vertex2 = vertices(:, v2)
-                vertex3 = vertices(:, v3)
-
-                ! Call intersection function (assumed to be efficient)
-                call ray_triangle_intersection_cuda(querypoint, shared_directions(:, cid), vertex1, vertex2, vertex3, t, u, v, intersect)
-
-                ! Update intersection count if an intersection is found
+                call ray_triangle_intersection_cuda(querypoint, directions(:,cid), vertices(:,v1), vertices(:,v2), vertices(:,v3), t, u, v, intersect)
                 if (intersect) then
                     intersection_count = intersection_count + 1
                 end if
-
             end do
-
         end do
 
-        ! Determine the sign based on the number of intersections
-        setsign = 1.0
         if (mod(intersection_count, 2) > 0) then
             setsign = -1.0
-        end if
-
-        ! Update the point inside array
+        else
+            setsign = 1.0
+        endif
         pointinside(i, j, k) = setsign * pointinside(i, j, k)
-
-    end if
-
+    endif
   end subroutine get_signed_distance_cuda
 
   attributes(device)  subroutine ray_triangle_intersection_cuda(orig, dir, v0, v1, v2, t, u, v, intersect)
@@ -880,7 +843,6 @@ contains
       outvec = outvec + vec1(i) * vec2(i)
     end do
   end function dot_product_cuda
-
 #endif
 
 end module utils
