@@ -6,14 +6,12 @@ program sdfgenerator
                       tagminmax, generate_directions, compute_scalar_distance, &
                       tag_narrowband_points, get_signed_distance
     use utils, only : inputfilename, nx, ny, nz, numberofrays, lx, ly, lz, dx, dy, dz, &
-                      sdfresolution, scalarvalue, pbarwidth, dp, sp, r0, ng, non_uniform_grid, &
+                      sdfresolution, scalarvalue, pbarwidth, dp, sp, r0, ng, &
+                      non_uniform_grid, dx_inverse, dy_inverse, dz_inverse, &
                       xp, yp, zp, xf, yf, zf, gpu_threads
-
-#if defined(_ISCUDA)  
-
+#if defined(_ISCUDA)                      
     use utils, only : get_signed_distance_cuda
     use cudafor
-
 #endif
     implicit none
 
@@ -34,9 +32,7 @@ program sdfgenerator
     real(dp), allocatable, dimension(:,:,:) :: pointinside, finaloutput
     ! Time loggers
     real(dp) :: time1, time2, elapsedTime
-
 #if defined(_ISCUDA)
-
     ! CUDA related data
     ! -- thread and block information
     type(dim3) :: threads_per_block, num_blocks
@@ -90,9 +86,9 @@ program sdfgenerator
     call cpu_time(time1)        ! Log CPU time at the start of the operation    
     ! First compute the scalar distance
     call compute_scalar_distance(sx,ex,sy,ey,sz,ez,xf,yp,zp,num_vertices,vertices,sdfresolution,pointinside)
-    print *, "*** 2nd - Pass: Narrow band tagging - Ld <",2.0_dp*min(dx,dy,dz(2)),"  ***"
+    print *, "*** 2nd - Pass: Narrow band tagging - Ld <",4.0_dp*min(dx,dy,dz(2)),"  ***"
     ! Check indices for where values are < sdfresolution*min(dx,dy,dz)    
-    narrowmask = pointinside < 2.0_dp*min(dx,dy,dz(2))
+    narrowmask = pointinside < 4.0_dp*min(dx,dy,dz(2))
     numberofnarrowpoints = count(narrowmask)
     print *, "Narrow band point: ", numberofnarrowpoints, "of", (ex-sx)*(ey-sy)*(ez-sz), "total points."
     ! Allocate the values and indices to the narrowbandindices array
@@ -101,7 +97,6 @@ program sdfgenerator
 #if defined(_ISCUDA)
     ! Now compute the ray intersection only for the narrowband points
     print *, "*** 3rd - Pass: Computing the sign for the distance | Computed on the GPU ***" 
-    !call get_signed_distance(xf,yp,zp,num_faces,numberofnarrowpoints,faces,vertices,directions,narrowbandindices,pointinside)
     ! Allocate memory for auxiliary data
     allocate(d_xf(nx),d_yp(ny),d_zp(nz))
     allocate(d_faces(3,num_faces), d_vertices(3,num_vertices))
