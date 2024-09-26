@@ -8,7 +8,7 @@ Fortran + CUDA based software to compute the signed-distance-field for OBJ file 
 cd src
 make ISCUDA="False"
 ```
-### For large problems - GPU version of the code can be used
+### For large problems - single GPU version of the code can be used
 ```
 cd src
 make ISCUDA="True"
