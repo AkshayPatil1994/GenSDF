@@ -100,7 +100,7 @@ def write_vtk(array, filename, x, y, z):
 
 # Example usage
 nx, ny, nz = 512, 128, 128
-filename1 = '../src/data/mask.bin'
+filename1 = 'data/mask.bin'
 # Load the grid for accurate location vtk write
 [xp,yp,zp,xf,yf,zf] = read_grid(loc='data/',iprecision=8,ng=[10,10,10],r0=[0.,0.,0.],non_uniform_grid = False)
 # Load the data from binary file 
