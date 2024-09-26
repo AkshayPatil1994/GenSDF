@@ -3,12 +3,14 @@ program sdfgenerator
     ! Signed-Distance-Field Generator 
     !
     use utils, only : read_inputfile, read_cans_grid, read_obj, getbbox, &
-                      tagminmax, generate_directions, compute_scalar_distance, &
-                      tag_narrowband_points, get_signed_distance
-    use utils, only : inputfilename, nx, ny, nz, numberofrays, lx, ly, lz, dx, dy, dz, &
-                      sdfresolution, scalarvalue, pbarwidth, dp, sp, r0, ng, &
-                      non_uniform_grid, dx_inverse, dy_inverse, dz_inverse, &
-                      xp, yp, zp, xf, yf, zf, gpu_threads
+                      tagminmax, generate_directions, & !compute_scalar_distance, &
+                      tag_narrowband_points, get_signed_distance, setup_grid_spacing, &
+                      compute_scalar_distance_face
+    use utils, only : inputfilename, nx, ny, nz, numberofrays, gpu_threads, &
+                      sdfresolution, scalarvalue, pbarwidth, dp, sp, r0, ng, non_uniform_grid, &                       
+                      lx, ly, lz, dx, dy, dz, &
+                      dx_inverse, dy_inverse, dz_inverse, &
+                      xp, yp, zp, xf, yf, zf
 #if defined(_ISCUDA)                      
     use utils, only : get_signed_distance_cuda
     use cudafor
@@ -32,12 +34,14 @@ program sdfgenerator
     real(dp), allocatable, dimension(:,:,:) :: pointinside, finaloutput
     ! Time loggers
     real(dp) :: time1, time2, elapsedTime
+    ! Iterators
+    integer :: ii
 #if defined(_ISCUDA)
     ! CUDA related data
     ! -- thread and block information
     type(dim3) :: threads_per_block, num_blocks
     ! -- input arguments for get_signed_distance
-    real(dp), allocatable, dimension(:), device :: d_xf, d_yp, d_zp !d_yf, d_zf, d_xp, d_yp, d_zp
+    real(dp), allocatable, dimension(:), device :: d_xf, d_yp, d_zp 
     integer, device :: d_numrays, d_num_faces, d_numberofnarrowpoints
     integer, allocatable, dimension(:,:), device :: d_faces
     real(dp), allocatable, dimension(:,:), device :: d_vertices
@@ -55,10 +59,17 @@ program sdfgenerator
     call cpu_time(time1)
     ! Read the input file (all ranks read inputfile)
     call read_inputfile()
+    print *, "*** Sucessfully read the input file ***"
     ! Read the grid (all ranks read the grid)
     call read_cans_grid('data/', dp, ng, r0, non_uniform_grid, xp, yp, zp, xf, yf, zf,dz)
+    print *, "*** Sucessfully read the CaNS grid ***"
+    ! Compute the grid spacing
+    allocate(dz_inverse(nz))
+    call setup_grid_spacing(xp,yp,zp,nz,dx,dy,dz,dx_inverse,dy_inverse,dz_inverse)
+    print *, "*** Sucessfully setup the grid spacing ***"
     ! Allocate memory for the grid
     allocate(pointinside(nx,ny,nz))
+    allocate(finaloutput(nx,ny,nz))
     ! Read the OBJ file
     call read_obj(inputfilename, vertices, faces, num_vertices, num_faces)
     ! Query the bounding box
@@ -70,7 +81,7 @@ program sdfgenerator
     print *, "Geometry has ",num_vertices, "number of vertices.."
     !Use bounding box extents plus a small value (order 5*grid size) as control points
     !Note: For z the buffer is 5*smallest grid point
-    call tagminmax(xf,yp,zp,bbox_min,bbox_max,Nx,Ny,Nz,dx,dy,dz(2),sx,ex,sy,ey,sz,ez)
+    call tagminmax(xf,yp,zp,bbox_min,bbox_max,nx,ny,nz,dx,dy,dz(2),sx,ex,sy,ey,sz,ez)
     ! Now allocate the narrow band indices search array
     allocate(narrowmask(nx,ny,nz))
     ! Generate the coorindate directions
@@ -81,14 +92,16 @@ program sdfgenerator
     print *, "- - - - - - - - Finished Pre-Processing in ", int(elapsedTime), "seconds..."
     ! Set a required value outside the bounding box (User specified)
     pointinside = scalarvalue
+    finaloutput = scalarvalue
     ! Loop over all data 
     print *, "*** 1st - Pass: Distance calculation ***"
     call cpu_time(time1)        ! Log CPU time at the start of the operation    
     ! First compute the scalar distance
-    call compute_scalar_distance(sx,ex,sy,ey,sz,ez,xf,yp,zp,num_vertices,vertices,sdfresolution,pointinside)
-    print *, "*** 2nd - Pass: Narrow band tagging - Ld <",4.0_dp*min(dx,dy,dz(2)),"  ***"
+    ! -- Vertex based distance -- call compute_scalar_distance(sx,ex,sy,ey,sz,ez,xf,yp,zp,num_vertices,vertices,sdfresolution,pointinside)
+    call compute_scalar_distance_face(sz,ez,xf,yp,zp,num_faces,faces,vertices,sdfresolution,pointinside)
+    print *, "*** 2nd - Pass: Narrow band tagging - distance <",4.0_dp*max(dx,dy,dz(2)),"  ***"
     ! Check indices for where values are < sdfresolution*min(dx,dy,dz)    
-    narrowmask = pointinside < 4.0_dp*min(dx,dy,dz(2))
+    narrowmask = pointinside < 4.0_dp*max(dx,dy,dz(2))
     numberofnarrowpoints = count(narrowmask)
     print *, "Narrow band point: ", numberofnarrowpoints, "of", (ex-sx)*(ey-sy)*(ez-sz), "total points."
     ! Allocate the values and indices to the narrowbandindices array
@@ -98,9 +111,11 @@ program sdfgenerator
     ! Now compute the ray intersection only for the narrowband points
     print *, "*** 3rd - Pass: Computing the sign for the distance | Computed on the GPU ***" 
     ! Allocate memory for auxiliary data
-    allocate(d_xf(nx),d_yp(ny),d_zp(nz))
-    allocate(d_faces(3,num_faces), d_vertices(3,num_vertices))
-    allocate(d_narrowbandindices(3,numberofnarrowpoints),d_pointinside(nx,ny,nz))
+    allocate(d_xf(nx), d_yp(ny), d_zp(nz))
+    allocate(d_faces(3, num_faces), d_vertices(3, num_vertices))
+    allocate(d_narrowbandindices(3, numberofnarrowpoints))
+    ! Only allocate a bounding box sized array on the GPU to save memory
+    allocate(d_pointinside(nx, ny, nz))
     ! Query the GPU being used
     ierr = cudaGetDeviceProperties(prop, 0)
     if (ierr /= 0) then
@@ -137,17 +152,33 @@ program sdfgenerator
     d_directions = directions
     d_narrowbandindices = narrowbandindices
     d_pointinside = pointinside
-    ! Now call the cuda function with the specified threads   
-    call get_signed_distance_cuda<<<num_blocks, threads_per_block>>>(d_xf, d_yp, d_zp, d_numrays, d_num_faces, d_numberofnarrowpoints, d_faces, d_vertices, d_directions, d_narrowbandindices, d_pointinside)
-    ! Copy only the results back
-    allocate(finaloutput(nx,ny,nz))
-    finaloutput = d_pointinside
+
+    call get_signed_distance_cuda<<<num_blocks, threads_per_block>>>(d_xf, d_yp, d_zp, d_numrays, d_num_faces, &
+                                                                    d_numberofnarrowpoints, d_faces, d_vertices, &
+                                                                    d_directions, d_narrowbandindices, d_pointinside)
+
+    ! Synchronize and check for errors
+    ierr = cudaDeviceSynchronize()
+    if (ierr /= 0) then
+        print *, "Error: Device synchronization failed with error code ", ierr
+        stop
+    endif
+    print *, "Passed compute"
+
+    ! Copy data from device to host (finaloutput = d_pointinside)
+    ierr = cudaMemcpy(finaloutput, d_pointinside, nx * ny * nz)
+    ierr = cudaGetLastError()
+    if (ierr /= 0) then
+        print *, "Error: Data copy from device to host failed with error code ", ierr
+        stop
+    endif
+    print *, "Passed copy"
+
 #else
     ! Now compute the ray intersection only for the narrowband points
     print *, "*** 3rd - Pass: Computing the sign for the distance | Computed on the CPU ***" 
-    call get_signed_distance(xf,yp,zp,num_faces,numberofnarrowpoints,faces,vertices,directions,narrowbandindices,pointinside)    
+    call get_signed_distance(xf, yp, zp, num_faces, numberofnarrowpoints, faces, vertices, directions, narrowbandindices, pointinside)    
     ! Assign the results to the filewrite array
-    allocate(finaloutput(nx,ny,nz))
     finaloutput = pointinside
 #endif
     ! Log CPU time at the end of the 

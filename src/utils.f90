@@ -5,18 +5,19 @@ module utils
     integer, parameter, public :: dp = selected_real_kind(15,307), &
                                   sp = selected_real_kind(6 , 37)
     !                              
-    ! Input data 
+    ! Input data [Public data declared first then the rest]
     !                              
     ! -- Geometry data --
-    character(len=512),  public :: inputfilename
+    character(len=512), public :: inputfilename
     ! -- Cartesian grid data --
-    integer, public :: nx, ny, nz, numberofrays
-    real(dp), public :: lx, ly, lz, dx, dy, dx_inverse, dy_inverse
-    real(dp), allocatable, dimension(:), public :: dz, dz_inverse
-    real(dp), allocatable, dimension(:), public :: xp, yp, zp, xf, yf, zf
+    integer, public :: numberofrays
+    integer, public :: nx, ny, nz
     real(dp), dimension(3), public :: r0
     integer, dimension(3), public :: ng
     logical, public :: non_uniform_grid
+    real(dp) :: lx, ly, lz, dx, dy, dx_inverse, dy_inverse
+    real(dp), allocatable, dimension(:) :: dz, dz_inverse
+    real(dp), allocatable, dimension(:) :: xp, yp, zp, xf, yf, zf
     ! -- SDF data --
     real(dp), public :: scalarvalue
     integer, public :: sdfresolution
@@ -109,15 +110,11 @@ contains
 
     ! Calculate grid spacing
     dl = l / real(npoints, 8)
-    dx = dl(1)
-    dx_inverse = 1.0_dp/dx
-    dy = dl(2)
-    dy_inverse = 1.0_dp/dy
 
     ! Generate centered grids
     allocate(xin_p(npoints(1)), yin_p(npoints(2)), zin_p(npoints(3)))
     allocate(xin_f(npoints(1)), yin_f(npoints(2)), zin_f(npoints(3)))
-    allocate(dzin(npoints(3)),dz_inverse(npoints(3)))
+    allocate(dzin(npoints(3)))
 
     do iter = 1, npoints(1)
         xin_p(iter) = origin(1) + (iter - 0.5) * dl(1)  ! Centered x grid
@@ -131,14 +128,7 @@ contains
 
     do iter = 1, npoints(3)
         zin_p(iter) = origin(3) + (iter - 0.5) * dl(3)  ! Centered z grid
-        zin_f(iter) = zin_p(iter) + dl(3) / 2.0        ! Staggered z grid
-    end do
-    ! Compute dz
-    dzin(1) = zin_f(1)
-    dz_inverse(1) = 1.0_dp/dzin(1)
-    do iter = 2,npoints(3)
-      dzin(iter) = zin_f(iter) - zin_f(iter-1)
-      dz_inverse(iter) = 1.0_dp/(zin_f(iter) - zin_f(iter-1))
+        zin_f(iter) = zin_p(iter) + dl(3) / 2.0         ! Staggered z grid
     end do
 
     ! Non-uniform grid handling
@@ -162,8 +152,38 @@ contains
         endif
     endif
 
-
   end subroutine read_cans_grid
+
+  subroutine setup_grid_spacing(xin,yin,zin,nz_in,dx_out,dy_out,dz_out,dx_inv_out,dy_inv_out,dz_inv_out)
+    !
+    ! This subroutine setups up the grid spacing and its inverse
+    !
+    implicit none
+    ! Input
+    real(dp), intent(in), dimension(:) :: xin, yin, zin
+    integer, intent(in) :: nz_in
+    ! Output
+    real(dp), intent(out) :: dx_out, dy_out, dx_inv_out, dy_inv_out
+    real(dp), intent(out), dimension(:) :: dz_out, dz_inv_out
+    ! Local variable
+    integer :: ii
+    
+    ! Compute grid spacing below
+    dx_out = xin(10) - xin(9)
+    dy_out = yin(10) - yin(9)
+    ! Inverse of grid spacing
+    dx_inv_out = 1.0_dp/dx_out
+    dy_inv_out = 1.0_dp/dy_out
+    ! In the vertical directions
+    dz_out(1) = zp(1)
+    do ii=2,nz_in
+        ! dz 
+        dz_out(ii) = zin(ii) - zin(ii-1)
+        ! inverse of dz
+        dz_inv_out(ii) = 1.0_dp/dz_out(ii) 
+    end do
+
+  end subroutine setup_grid_spacing
 
   subroutine read_obj(filename, vertices_in, faces_in, num_vertices_in, num_faces_in)
     !
@@ -362,57 +382,60 @@ contains
     print *, "Normals computed in ",time2-time1,"seconds...."
   end subroutine getfacenormals
 
-  subroutine tagminmax(x,y,z,bbox_min,bbox_max,Nx,Ny,Nz,dx,dy,dz,sx,ex,sy,ey,sz,ez)
+  subroutine tagminmax(xin,yin,zin,bbox_min,bbox_max,nx_in,ny_in,nz_in,dx_in,dy_in,dz_in,sx,ex,sy,ey,sz,ez)
     !
     ! This subroutine tags the location of the min and max indices based on bounding box
     !
     implicit none
     ! Input Argument
-    real(dp), dimension(:), intent(in) :: x, y, z                 ! x, y, z coordinates
-    real(dp), intent(in) :: dx, dy, dz                            ! grid spacing
+    real(dp), dimension(:), intent(in) :: xin, yin, zin                 ! x, y, z coordinates
+    real(dp), intent(in) :: dx_in, dy_in, dz_in                            ! grid spacing
     real(dp), dimension(:), intent(in) :: bbox_min, bbox_max      ! Bounding box min & max
-    integer, intent(in) :: Nx, Ny, Nz                             ! Grid points
+    integer, intent(in) :: nx_in, ny_in, nz_in                             ! Grid points
     ! Output
     integer, intent(out) :: sx,ex,sy,ey,sz,ez                     ! Start-end index
     ! Local variables
-    integer :: i, j, k                                            ! Iterators
+    integer :: iteri, iterj, iterk                                            ! Iterators
+    real(dp) :: buffer_distance
 
     ! Set min and max to domain extents
     sx = 1
-    ex = nx
+    ex = nx_in
     sy = 1
-    ey = ny
+    ey = ny_in
     sz = 1
-    ez = nz
-    
-    do i=1,Nx
+    ez = nz_in
+    ! Compute the buffer distance based on used unput
+    buffer_distance = real(sdfresolution,kind=dp)
+
+    do iteri=1,nx_in
       ! Tag min
-      if(x(i)<=bbox_min(1)-5*dx) then
-          sx = i
-      else if (x(i)<=bbox_max(1)+5*dx) then
-          ex = i
+      if(xin(iteri)<=bbox_min(1)-buffer_distance*dx_in) then
+          sx = iteri
+      else if (xin(iteri)<=bbox_max(1)+buffer_distance*dx_in) then
+          ex = iteri
       else
         exit 
       end if
     end do
 
-    do j=1,Ny
+    do iterj=1,ny_in
       ! Tag max
-      if(y(j)<=bbox_min(2)-5*dy) then
-          sy = j
-      else if(y(j)<=bbox_max(2)+5*dy) then
-          ey = j
+      if(yin(iterj)<=bbox_min(2)-buffer_distance*dy_in) then
+          sy = iterj
+      else if(yin(iterj)<=bbox_max(2)+buffer_distance*dy_in) then
+          ey = iterj
       else
         exit 
       end if
     end do
 
-    do k=1,Nz
+    do iterk=1,nz_in
       ! Tag max
-      if(z(k)<=bbox_min(3)-5*dz) then
-          sz = k
-      else if (z(k)<=bbox_max(3)+5*dz) then
-          ez = k
+      if(zin(iterk)<=bbox_min(3)-buffer_distance*dz_in) then
+          sz = iterk
+      else if (zin(iterk)<=bbox_max(3)+buffer_distance*dz_in) then
+          ez = iterk
       else
           exit
       end if
@@ -420,9 +443,9 @@ contains
 
     ! Print to screen
     print *, "*** Min-Max Index-Value pair ***"
-    print *, "Min-Max x:", sx, x(sx), "|", ex, x(ex)
-    print *, "Min-Max y:", sy, y(sy), "|", ey, y(ey)
-    print *, "Min-Max z:", sz, z(sz), "|", ez, z(ez)
+    print *, "Min-Max x:", sx, xin(sx), "|", ex, xin(ex)
+    print *, "Min-Max y:", sy, yin(sy), "|", ey, yin(ey)
+    print *, "Min-Max z:", sz, zin(sz), "|", ez, zin(ez)
   end subroutine tagminmax
 
   subroutine cross_product(result, u, v)
@@ -596,6 +619,180 @@ contains
 
   end subroutine compute_scalar_distance
 
+  subroutine compute_scalar_distance_face(zstart,zend,xin,yin,zin,nfaces,input_faces,input_vertices,buffer_point_size,distance)
+    !
+    ! This subroutine computes the shortest distance between the input geometry face and the query points on the grid
+    !
+    implicit none
+    ! Input
+    integer, intent(in) :: zstart, zend
+    real(dp), intent(in), dimension(:) :: xin, yin, zin
+    integer, intent(in) :: nfaces
+    real(dp), intent(in), dimension(:,:) :: input_vertices
+    integer, intent(in), dimension(:,:) :: input_faces
+    integer, intent(in) :: buffer_point_size
+    ! Output
+    real(dp), intent(out), dimension(:,:,:) :: distance
+    ! Local variables
+    integer :: face_id, ii, jj, kk 
+    real(dp), dimension(3) :: vertex_1, vertex_2, vertex_3
+    real(dp), dimension(3) :: min_query, max_query
+    integer, dimension(3) :: min_index, max_index
+    real(dp), dimension(3) :: query_point
+    real(dp) :: temp_distance
+    real(dp) :: deltax_inverse, deltay_inverse
+
+    ! Compute the grid spacing and inverse
+    deltax_inverse = 1.0_dp/(xin(10) - xin(9))
+    deltay_inverse = 1.0_dp/(yin(10) - yin(9))
+
+    ! Loop over all the faces of the geometry
+    do face_id=1,nfaces
+      call show_progress(face_id,nfaces,50)
+      ! Get the vertices corresponding to this face
+      vertex_1 = input_vertices(:,input_faces(1,face_id))
+      vertex_2 = input_vertices(:,input_faces(2,face_id))
+      vertex_3 = input_vertices(:,input_faces(3,face_id))
+      ! Compute the bounding box based on the min-max of these three vertices to shrink the query points
+      do ii=1,3
+        min_query(ii) = min(vertex_1(ii),vertex_2(ii),vertex_3(ii))
+        max_query(ii) = max(vertex_1(ii),vertex_2(ii),vertex_3(ii))
+      end do
+      ! Now locate the min and max indices to loop over (face-local bounding box)
+      min_index(1) = floor(min_query(1) * deltax_inverse) - buffer_point_size
+      min_index(2) = floor(min_query(2) * deltay_inverse) - buffer_point_size
+      max_index(1) = floor(max_query(1) * deltax_inverse) + buffer_point_size
+      max_index(2) = floor(max_query(2) * deltay_inverse) + buffer_point_size
+      ! Min locator
+      kk = zstart
+      min_index(3) = zstart       ! Assign first query point as minimum if condition is not met 
+      do while (zin(kk) <= min_query(3))
+        min_index(3) = kk - buffer_point_size
+        kk = kk + 1
+      end do
+      ! Max locator
+      kk = zstart
+      max_index(3) = zend       ! Assign last query point as minimum if condition is not met 
+      do while (zin(kk) <= max_query(3))
+        max_index(3) = kk + buffer_point_size
+        kk = kk + 1
+      end do
+      ! Now loop over the face-local bounding box and compute the distance to the triangle
+      if (min_index(1) >= 1 .and. max_index(1) <= nx .and. min_index(2) >= 1 .and. max_index(2) <= ny .and. min_index(3) >= 1 .and. max_index(3) <= nz) then
+        do kk=min_index(3),max_index(3)
+          do jj=min_index(2),max_index(2)
+            do ii=min_index(1),max_index(1)
+              query_point = [xin(ii),yin(jj),zin(kk)]
+              call distance_point_to_triangle(query_point, vertex_1, vertex_2, vertex_3, temp_distance)
+              distance(ii,jj,kk) = min(temp_distance,distance(ii,jj,kk))
+            end do
+          end do
+        end do
+      endif
+
+    end do
+
+  end subroutine compute_scalar_distance_face
+
+  subroutine distance_point_to_triangle(point, vert0, vert1, vert2, dist_to_face)
+    !
+    ! This subroutine computes the distance between a point and a triangle
+    !
+    implicit none
+    ! Input
+    real(dp), intent(in) :: point(3)                        ! Query point coordinates
+    real(dp), intent(in) :: vert0(3), vert1(3), vert2(3)    ! Triangle vertices
+    ! Output
+    real(dp), intent(out) :: dist_to_face         ! Distance between point and triangle
+    ! Local variables
+    real(dp) :: edge0(3), edge1(3), v0p(3), n(3), dist_vec(3), proj(3)
+    real(dp) :: d, denom, param_s, param_t
+
+    ! Compute the edges of the triangle
+    edge0 = vert1 - vert0                               ! Edge v0->v1
+    edge1 = vert2 - vert0                               ! Edge v0->v2
+    v0p = point - vert0                                 ! Vector from v0 to point p
+
+    ! Compute the normal of the triangle
+    call cross_product(n, edge0, edge1)
+
+    ! Projection of the point onto the triangle plane
+    d = dot_product(n, vert0)
+    denom = sqrt(dot_product(n, n))
+
+    if (denom > 1.0e-12_dp) then
+        dist_to_face = abs(dot_product(n, point) - d) / denom
+    else
+        dist_to_face = 0.0_dp
+    end if
+
+    ! Check if the point is inside the triangle (using barycentric coordinates)
+    call project_point_to_triangle(point, vert0, vert1, vert2, param_s, param_t)
+
+    ! Compute the closest point on the triangle using s and t
+    proj = vert0 + param_s * edge0 + param_t * edge1
+
+    ! Calculate the distance between the query point and the closest point on the triangle
+    dist_vec = point - proj
+    dist_to_face = sqrt(dot_product(dist_vec, dist_vec))
+
+  end subroutine distance_point_to_triangle
+
+  subroutine project_point_to_triangle(point, vert0, vert1, vert2, param_s, param_t)
+    !
+    ! This subroutine projects a point onto a triangle and calculates the barycentric coordinates (s, t).
+    !
+    implicit none
+    ! Input
+    real(dp), intent(in) :: point(3)                        ! Query point coordinates
+    real(dp), intent(in) :: vert0(3), vert1(3), vert2(3)    ! Triangle vertices
+    ! Output
+    real(dp), intent(out) :: param_s, param_t               ! Barycentric coordinates of the point projection
+
+    ! Local variables
+    real(dp) :: edge0(3), edge1(3), v0p(3)
+    real(dp) :: a, b, c, d, e, det
+
+    ! Compute the edges of the triangle
+    edge0 = vert1 - vert0   ! Edge v0->v1
+    edge1 = vert2 - vert0   ! Edge v0->v2
+    v0p = point - vert0     ! Vector from v0 to point p
+
+    ! Compute dot products for the barycentric coordinates
+    a = dot_product(edge0, edge0)
+    b = dot_product(edge0, edge1)
+    c = dot_product(edge1, edge1)
+    d = dot_product(edge0, v0p)
+    e = dot_product(edge1, v0p)
+
+    ! Determinant of the matrix
+    det = a * c - b * b
+
+    if (det /= 0.0_dp) then
+        ! Compute barycentric coordinates (s, t) of the projection
+        param_s = (b * e - c * d) / det
+        param_t = (b * d - a * e) / det
+
+        ! Clamp s and t to ensure the point lies inside the triangle or on the edges
+        if (param_s < 0.0_dp) then
+            param_s = 0.0_dp
+        else if (param_s > 1.0_dp) then
+            param_s = 1.0_dp
+        end if
+
+        if (param_t < 0.0_dp) then
+            param_t = 0.0_dp
+        else if (param_t > 1.0_dp) then
+            param_t = 1.0_dp
+        end if
+    else
+        ! Handle degenerate triangles (when det is zero, the points are collinear)
+        param_s = 0.0_dp
+        param_t = 0.0_dp
+    end if
+
+  end subroutine project_point_to_triangle
+
   subroutine tag_narrowband_points(sx,ex,sy,ey,sz,ez,narrowmask,narrowbandindices)
     !
     ! This subroutine tags the narrowband points
@@ -612,7 +809,6 @@ contains
 
     point_tracker = 1
     do k=sz,ez
-      call show_progress((k-sz),(ez-sz),50)
       do j=sy,ey
           do i=sx,ex
               if(narrowmask(i,j,k) .eqv. .True.) then
@@ -707,19 +903,19 @@ contains
   
 #if defined(_ISCUDA)  
   ! --- CUDA RELATED SUBROUTINES & FUNCTIONS --- !
-  attributes(global) subroutine get_signed_distance_cuda(x, y, z, numrays, num_faces, numberofnarrowpoints, faces, vertices, directions, narrowbandindices, pointinside)
+  attributes(global) subroutine get_signed_distance_cuda(xd, yd, zd, dnumrays, dnum_faces, dnumberofnarrowpoints, dfaces, dvertices, ddirections, dnarrowbandindices, dpointinside)
     implicit none
     ! Input
-    real(dp), intent(in), dimension(:), device :: x, y, z
-    integer, intent(in), device :: numberofnarrowpoints, num_faces, numrays
-    integer, intent(in), dimension(:,:), device :: narrowbandindices
-    integer, intent(in), dimension(:,:), device :: faces
-    real(dp), intent(in), dimension(:,:), device :: vertices
-    real(dp), intent(in), dimension(:,:), device :: directions 
+    real(dp), intent(in), dimension(:), device :: xd, yd, zd
+    integer, intent(in), device :: dnumberofnarrowpoints, dnum_faces, dnumrays
+    integer, intent(in), dimension(:,:), device :: dnarrowbandindices
+    integer, intent(in), dimension(:,:), device :: dfaces
+    real(dp), intent(in), dimension(:,:), device :: dvertices
+    real(dp), intent(in), dimension(:,:), device :: ddirections 
     ! Output
-    real(dp), intent(inout), dimension(:,:,:), device :: pointinside
+    real(dp), intent(inout), dimension(:,:,:), device :: dpointinside
     ! Local variables
-    integer :: point_tracker, cid, faceid, i, j, k
+    integer :: dpoint_tracker, dcid, dfaceid, di, dj, dk
     integer :: v1, v2, v3
     integer :: intersection_count
     real(dp), dimension(3) :: querypoint
@@ -728,34 +924,53 @@ contains
     real(dp) :: t, u, v
 
     ! Get the thread index for parallel execution
-    point_tracker = blockIdx%x * blockDim%x + threadIdx%x + 1
+    dpoint_tracker = blockIdx%x * blockDim%x + threadIdx%x + 1
 
-    if (point_tracker <= numberofnarrowpoints) then
-        i = narrowbandindices(1, point_tracker)
-        j = narrowbandindices(2, point_tracker)
-        k = narrowbandindices(3, point_tracker)
-        querypoint = (/x(i), y(j), z(k)/)
-        intersection_count = 0
+    ! Ensure query is within bounds for the narrowband indices
+    if (dpoint_tracker <= dnumberofnarrowpoints) then
+        ! Extract di, dj, dk from narrowband indices (add boundary checks)
+        di = dnarrowbandindices(1, dpoint_tracker)
+        dj = dnarrowbandindices(2, dpoint_tracker)
+        dk = dnarrowbandindices(3, dpoint_tracker)
 
-        do cid = 1, numrays
-            do faceid = 1, num_faces
-                v1 = faces(1, faceid)
-                v2 = faces(2, faceid)
-                v3 = faces(3, faceid)
-                call ray_triangle_intersection_cuda(querypoint, directions(:,cid), vertices(:,v1), vertices(:,v2), vertices(:,v3), t, u, v, intersect)
-                if (intersect) then
-                    intersection_count = intersection_count + 1
-                end if
+        ! Ensure di, dj, dk are within valid bounds of xd, yd, zd, and dpointinside
+        if (di > 0 .and. di <= size(xd) .and. dj > 0 .and. dj <= size(yd) .and. dk > 0 .and. dk <= size(zd)) then
+            querypoint = [xd(di), yd(dj), zd(dk)]
+            intersection_count = 0
+
+            ! Loop over rays and faces
+            do dcid = 1, dnumrays
+                do dfaceid = 1, dnum_faces
+                    ! Extract vertices for the face
+                    v1 = dfaces(1, dfaceid)
+                    v2 = dfaces(2, dfaceid)
+                    v3 = dfaces(3, dfaceid)
+
+                    ! Perform ray-triangle intersection test
+                    call ray_triangle_intersection_cuda(querypoint, ddirections(:, dcid), &
+                                                        dvertices(:, v1), dvertices(:, v2), dvertices(:, v3), &
+                                                        t, u, v, intersect)
+                    if (intersect) then
+                        intersection_count = intersection_count + 1
+                    end if
+                end do
             end do
-        end do
 
-        if (mod(intersection_count, 2) > 0) then
-            setsign = -1.0
-        else
-            setsign = 1.0
-        endif
-        pointinside(i, j, k) = setsign * pointinside(i, j, k)
-    endif
+            ! Set the sign based on the number of intersections
+            if (mod(intersection_count, 2) > 0) then
+                setsign = -1.0_dp
+            else
+                setsign = 1.0_dp
+            end if
+
+            ! Update dpointinside array
+            if (di > 0 .and. di <= size(dpointinside, 1) .and. &
+                dj > 0 .and. dj <= size(dpointinside, 2) .and. &
+                dk > 0 .and. dk <= size(dpointinside, 3)) then
+                dpointinside(di, dj, dk) = setsign * dpointinside(di, dj, dk)
+            end if
+        end if
+    end if
   end subroutine get_signed_distance_cuda
 
   attributes(device)  subroutine ray_triangle_intersection_cuda(orig, dir, v0, v1, v2, t, u, v, intersect)

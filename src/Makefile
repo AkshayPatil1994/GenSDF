@@ -12,18 +12,17 @@ SRCS = utils.f90 main.f90
 # Define the object files
 OBJS = $(SRCS:.f90=.o)
 
-# Output executable name
-EXE = gensdf
-
 # Check if _ISCUDA is set and define the compiler and flags accordingly
 ifeq ($(ISCUDA),True)
   FC = $(NVFORTRAN)
   FFLAGS = $(NVFORTRANFLAGS)
   DEFINES = -D_ISCUDA
+  EXE = gensdf_cuda
 else
   FC = $(GFORTRAN)
   FFLAGS = $(GFORTRANFLAGS)
   DEFINES =
+  EXE = gensdf_cpu
 endif
 
 # Default target
@@ -39,11 +38,11 @@ $(EXE): $(OBJS)
 
 # Only remove module/object files
 clean:
-	rm -f $(OBJS)
+	rm -f $(OBJS) *.mod
 
 # All Clean target to remove object files and the executable
 allclean:
-	rm -f $(OBJS) $(EXE)
+	rm -f $(OBJS) *.mod gensdf_cpu gensdf_cuda
 
 # Phony targets
 .PHONY: all clean
