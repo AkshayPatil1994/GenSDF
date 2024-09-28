@@ -86,7 +86,9 @@ program sdfgenerator
     call cpu_time(time1)        ! Log CPU time at the start of the operation    
     ! First compute the scalar distance
     call compute_scalar_distance(sx,ex,sy,ey,sz,ez,xf,yp,zp,num_vertices,vertices,sdfresolution,pointinside)
-    print *, "*** 2nd - Pass: Narrow band tagging - Ld <",4.0_dp*min(dx,dy,dz(2)),"  ***"
+    call cpu_time(time2)
+    print *, "- - - - - - - - Scalar distance calculated in ", time2-time1, "seconds..."
+    print *, "*** 2nd - Pass: Narrow band tagging - Ld <",4.0_dp*min(dx,dy,dz(2)),"| 4 x max(dx_i)  ***"
     ! Check indices for where values are < sdfresolution*min(dx,dy,dz)    
     narrowmask = pointinside < 4.0_dp*min(dx,dy,dz(2))
     numberofnarrowpoints = count(narrowmask)
