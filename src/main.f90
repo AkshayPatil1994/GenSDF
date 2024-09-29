@@ -1,199 +1,67 @@
-program sdfgenerator
+program generatesdf
     !
     ! Signed-Distance-Field Generator 
     !
-    use utils, only : read_inputfile, read_cans_grid, read_obj, getbbox, &
-                      tagminmax, generate_directions, & !compute_scalar_distance, &
-                      tag_narrowband_points, get_signed_distance, setup_grid_spacing, &
-                      compute_scalar_distance_face
-    use utils, only : inputfilename, nx, ny, nz, numberofrays, gpu_threads, &
-                      sdfresolution, scalarvalue, pbarwidth, dp, sp, r0, ng, non_uniform_grid, &                       
-                      lx, ly, lz, dx, dy, dz, &
-                      dx_inverse, dy_inverse, dz_inverse, &
-                      xp, yp, zp, xf, yf, zf
-#if defined(_ISCUDA)                      
-    use utils, only : get_signed_distance_cuda
-    use cudafor
-#endif
+    ! Subroutines from utils
+    use utils, only : printlogo, read_inputfile, read_cans_grid, setup_grid_spacing, &
+                      read_obj, getbbox, tagminmax, compute_scalar_distance_face, write2binary
+    ! Data from utils
+    use utils, only : dp, inputfilename, nx, ny, nz, lx, ly, lz, r0, ng, non_uniform_grid, &
+                      xp, yp, zp, xf, yf, zf, dx, dx_inverse, dy, dy_inverse, dz, dz_inverse, &
+                      buffer_points, scalarvalue                    
     implicit none
-
-    ! Input geometry related data
-    real(dp), allocatable, dimension(:,:) :: vertices
-    integer, allocatable, dimension(:,:) :: faces
-    integer :: num_faces, num_vertices
-    ! Bounding related data
-    real(dp), dimension(3) :: bbox_min, bbox_max  
-    ! Min-Max bounds for x, y, and z
-    integer :: sx, ex, sy, ey, sz, ez
-    ! Arrays that store narrow band indices
-    logical, allocatable, dimension(:,:,:) :: narrowmask
-    integer, allocatable, dimension(:,:) :: narrowbandindices
-    integer :: numberofnarrowpoints
-    ! Data structure for masking
-    real(dp), dimension(3, 19) :: directions
-    real(dp), allocatable, dimension(:,:,:) :: pointinside, finaloutput
-    ! Time loggers
-    real(dp) :: time1, time2, elapsedTime
-    ! Iterators
-    integer :: ii
-#if defined(_ISCUDA)
-    ! CUDA related data
-    ! -- thread and block information
-    type(dim3) :: threads_per_block, num_blocks
-    ! -- input arguments for get_signed_distance
-    real(dp), allocatable, dimension(:), device :: d_xf, d_yp, d_zp 
-    integer, device :: d_numrays, d_num_faces, d_numberofnarrowpoints
-    integer, allocatable, dimension(:,:), device :: d_faces
-    real(dp), allocatable, dimension(:,:), device :: d_vertices
-    real(dp), dimension(3,19), device :: d_directions
-    integer, allocatable, dimension(:,:), device :: d_narrowbandindices
-    real(dp), allocatable, dimension(:,:,:), device :: d_pointinside
-    type(cudaDeviceProp) :: prop
-    ! Device details
-    integer :: device, ierr, max_threads_per_block, max_blocks_x, max_blocks_y, max_blocks_z
-#endif
-    !
-    ! PROGRAM BEGINS
-    !
-    ! Log CPU time at the start
-    call cpu_time(time1)
-    ! Read the input file (all ranks read inputfile)
+    
+    ! Input geometry related data (Host i.e., CPU)
+    integer :: nfaces, nvertices, nnormals                          ! Number of faces, vertices, and normals
+    real(dp), allocatable, dimension(:,:) :: vertices, normals      ! Array that stores vertices & vertex normals information
+    integer, allocatable, dimension(:,:) :: faces, face_normals     ! Array that stroes the face (vertex) and face_normal (vertex normals) ID
+    real(dp), dimension(3) :: bbox_min, bbox_max                    ! Bounding box of the geometry
+    integer :: sx, ex, sy, ey, sz, ez                               ! Tagged min-max indices on the grid
+    ! Signed-Distance-Field array (Host i.e., CPU)
+    real(dp), allocatable, dimension(:,:,:) :: sdf  ! Signed distance field array
+    
+    ! -- AUXILIARY DATA -- !
+    real(dp) :: startTime, endTime, totalTime
+    real(dp) :: time1, time2
+!-------------------------------------------------------------------------------------------!
+!                                   PROGRAM BEGINS                                          !
+!-------------------------------------------------------------------------------------------!
+    ! Log CPU time at the start of the program
+    call cpu_time(startTime)
+    ! Print logo for the program
+    call printlogo()
+    ! Input data    
     call read_inputfile()
-    print *, "*** Sucessfully read the input file ***"
-    ! Read the grid (all ranks read the grid)
-    call read_cans_grid('data/', dp, ng, r0, non_uniform_grid, xp, yp, zp, xf, yf, zf,dz)
-    print *, "*** Sucessfully read the CaNS grid ***"
-    ! Compute the grid spacing
-    allocate(dz_inverse(nz))
-    call setup_grid_spacing(xp,yp,zp,nz,dx,dy,dz,dx_inverse,dy_inverse,dz_inverse)
-    print *, "*** Sucessfully setup the grid spacing ***"
-    ! Allocate memory for the grid
-    allocate(pointinside(nx,ny,nz))
-    allocate(finaloutput(nx,ny,nz))
-    ! Read the OBJ file
-    call read_obj(inputfilename, vertices, faces, num_vertices, num_faces)
-    ! Query the bounding box
-    call getbbox(vertices, num_vertices, bbox_min, bbox_max)    
-    ! Print checks
-    print *, "Geometry is bounded by (minimum)", bbox_min
-    print *, "Geometry is bounded by (maximum)", bbox_max
-    print *, "Geometry has ",num_faces, "number of faces.."
-    print *, "Geometry has ",num_vertices, "number of vertices.."
-    !Use bounding box extents plus a small value (order 5*grid size) as control points
-    !Note: For z the buffer is 5*smallest grid point
-    call tagminmax(xf,yp,zp,bbox_min,bbox_max,nx,ny,nz,dx,dy,dz(2),sx,ex,sy,ey,sz,ez)
-    ! Now allocate the narrow band indices search array
-    allocate(narrowmask(nx,ny,nz))
-    ! Generate the coorindate directions
-    call generate_directions(directions)
-    ! Log CPU time at the end of pre-processing
-    call cpu_time(time2)
-    elapsedTime = (time2-time1)
-    print *, "- - - - - - - - Finished Pre-Processing in ", int(elapsedTime), "seconds..."
-    ! Set a required value outside the bounding box (User specified)
-    pointinside = scalarvalue
-    finaloutput = scalarvalue
-    ! Loop over all data 
-    print *, "*** 1st - Pass: Distance calculation ***"
-    call cpu_time(time1)        ! Log CPU time at the start of the operation    
-    ! First compute the scalar distance
-    ! -- Vertex based distance -- call compute_scalar_distance(sx,ex,sy,ey,sz,ez,xf,yp,zp,num_vertices,vertices,sdfresolution,pointinside)
-    call compute_scalar_distance_face(sz,ez,xf,yp,zp,num_faces,faces,vertices,sdfresolution,pointinside)
-    call cpu_time(time2)
-    print *, "- - - - - - - - Scalar distance calculated in ", time2-time1, "seconds..."
-    print *, "*** 2nd - Pass: Narrow band tagging - Ld <",4.0_dp*min(dx,dy,dz(2)),"| 4 x max(dx_i)  ***"
-    ! Check indices for where values are < sdfresolution*min(dx,dy,dz)    
-    narrowmask = pointinside < 4.0_dp*max(dx,dy,dz(2))
-    numberofnarrowpoints = count(narrowmask)
-    print *, "Narrow band point: ", numberofnarrowpoints, "of", (ex-sx)*(ey-sy)*(ez-sz), "total points."
-    ! Allocate the values and indices to the narrowbandindices array
-    allocate(narrowbandindices(3,numberofnarrowpoints))
-    call tag_narrowband_points(sx,ex,sy,ey,sz,ez,narrowmask,narrowbandindices)
-#if defined(_ISCUDA)
-    ! Now compute the ray intersection only for the narrowband points
-    print *, "*** 3rd - Pass: Computing the sign for the distance | Computed on the GPU ***" 
-    ! Allocate memory for auxiliary data
-    allocate(d_xf(nx), d_yp(ny), d_zp(nz))
-    allocate(d_faces(3, num_faces), d_vertices(3, num_vertices))
-    allocate(d_narrowbandindices(3, numberofnarrowpoints))
-    ! Only allocate a bounding box sized array on the GPU to save memory
-    allocate(d_pointinside(nx, ny, nz))
-    ! Query the GPU being used
-    ierr = cudaGetDeviceProperties(prop, 0)
-    if (ierr /= 0) then
-        print *, "Error: Unable to get device properties."
-        stop
-    end if
-    max_threads_per_block = prop%maxThreadsPerBlock
-    max_blocks_x = prop%maxGridSize(1)
-    max_blocks_y = prop%maxGridSize(2)
-    max_blocks_z = prop%maxGridSize(3)
-    ! Print information to screen
-    print *, "Device Name: ", trim(prop%name)
-    print *, "Max Threads Per Block: ", max_threads_per_block
-    print *, "  X-dimension: ", max_blocks_x
-    print *, "  Y-dimension: ", max_blocks_y
-    print *, "  Z-dimension: ", max_blocks_z
-    if (gpu_threads > max_threads_per_block) then
-        print *, "** WARNING: User attempting to use more threads than allowed **"
-    endif
-    ! Define the block_size and grid_size
-    threads_per_block = dim3(gpu_threads, 1, 1)
-    num_blocks = dim3(ceiling(real(numberofnarrowpoints) / gpu_threads, kind=dp), 1, 1)
-    print *, "GPU - Threads: ", threads_per_block
-    print *, "GPU - Blocks: ", num_blocks
-    ! First copy all data from host (CPU) to device (GPU)
-    d_xf = xf
-    d_yp = yp
-    d_zp = zp
-    d_numrays = numberofrays
-    d_num_faces = num_faces
-    d_numberofnarrowpoints = numberofnarrowpoints
-    d_faces = faces
-    d_vertices = vertices
-    d_directions = directions
-    d_narrowbandindices = narrowbandindices
-    d_pointinside = pointinside
-
-    call get_signed_distance_cuda<<<num_blocks, threads_per_block>>>(d_xf, d_yp, d_zp, d_numrays, d_num_faces, &
-                                                                    d_numberofnarrowpoints, d_faces, d_vertices, &
-                                                                    d_directions, d_narrowbandindices, d_pointinside)
-
-    ! Synchronize and check for errors
-    ierr = cudaDeviceSynchronize()
-    if (ierr /= 0) then
-        print *, "Error: Device synchronization failed with error code ", ierr
-        stop
-    endif
-    print *, "Passed compute"
-
-    ! Copy data from device to host (finaloutput = d_pointinside)
-    ierr = cudaMemcpy(finaloutput, d_pointinside, nx * ny * nz)
-    ierr = cudaGetLastError()
-    if (ierr /= 0) then
-        print *, "Error: Data copy from device to host failed with error code ", ierr
-        stop
-    endif
-    print *, "Passed copy"
-
-#else
-    ! Now compute the ray intersection only for the narrowband points
-    print *, "*** 3rd - Pass: Computing the sign for the distance | Computed on the CPU ***" 
-    call get_signed_distance(xf, yp, zp, num_faces, numberofnarrowpoints, faces, vertices, directions, narrowbandindices, pointinside)    
-    ! Assign the results to the filewrite array
-    finaloutput = pointinside
-#endif
-    ! Log CPU time at the end of the 
-    call cpu_time(time2)
-    print *, "*** Signed-Distance-Field (SDF) computed in ",int(time2-time1), "seconds ***"
-    elapsedTime = elapsedTime + (time2-time1)
-    print *, "*** Writing SDF to file ***"
+    ! Read the grid
+    call read_cans_grid('data/', dp, ng, r0, non_uniform_grid, xp, yp, zp, xf, yf, zf, dz,lx,ly,lz)
+    ! Setup the grid spacing and other grid parameters
+    allocate(dz_inverse(ng(3)))
+    call setup_grid_spacing(xf,yp,zp,ng(3),dx,dy,dz,dx_inverse,dy_inverse,dz_inverse)
+    ! Allocate memory for the SDF field
+    allocate(sdf(nx,ny,nz))
+    ! Read the OBJ file with the normals information
+    call read_obj(inputfilename,vertices,normals,faces,face_normals,nvertices,nnormals,nfaces)
+    ! Query the bounding box of the geometry
+    call getbbox(vertices, nvertices, bbox_min, bbox_max)
+    ! Tag the min-max bounding box indices on the grid
+    call tagminmax(xf,yp,zp,bbox_min,bbox_max,nx,ny,nz,dx,dy,dz(2),buffer_points,sx,ex,sy,ey,sz,ez)
+    ! Assign a large - user specified positive value everywhere in the domain
+    sdf = scalarvalue
+    ! Log CPU time at the end of pre-processing step
     call cpu_time(time1)
-    ! Write the mask to file
-    open(unit=10, file='data/mask.bin', status='replace', form='unformatted')
-    write(10) finaloutput
-    close(10)
-    elapsedTime = elapsedTime + (time2-time1)
-    print *, "*** Finished in ",int(elapsedTime), "seconds ***"
-
-end program sdfgenerator
+    print *, "-- Finished pre-processing geometry in ",time1-startTime,"seconds..."
+    ! Compute the signed-distance-field
+    print *, "*** Calculating the signed-distance-field ***"
+    call compute_scalar_distance_face(sz,ez,xf,yp,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)
+    ! Write file to binary format
+    call cpu_time(time1)
+    print *, "*** Writing output data to file ***"
+    call write2binary('data/sdf.bin',sdf)
+    call cpu_time(time2)
+    print *, "-- Done with file write in ", time2-time1,"seconds..."
+    ! Log CPU time at the end of the program
+    call cpu_time(endTime)
+    totalTime = totalTime + (endTime-startTime)
+    print *, "*** Calculation for SDF completed in ",totalTime, "seconds ***"
+    
+end program generatesdf
