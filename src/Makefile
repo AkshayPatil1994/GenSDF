@@ -3,7 +3,7 @@ NVFORTRAN = nvfortran
 GFORTRAN = gfortran
 
 # Define the flags for each compiler
-GFORTRANFLAGS = -O3 -ffree-line-length-none -cpp
+GFORTRANFLAGS = -O3 -fbounds-check -ffree-line-length-none -cpp
 NVFORTRANFLAGS = -O3 -cuda -fast -Mpreprocess
 
 # Define the source files
