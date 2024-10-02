@@ -18,8 +18,7 @@ program generatesdf
     real(dp), dimension(3) :: bbox_min, bbox_max                    ! Bounding box of the geometry
     integer :: sx, ex, sy, ey, sz, ez                               ! Tagged min-max indices on the grid
     ! Signed-Distance-Field array (Host i.e., CPU)
-    real(dp), allocatable, dimension(:,:,:) :: sdf  ! Signed distance field array
-    
+    real(dp), allocatable, dimension(:,:,:) :: sdf  ! Signed distance field array  
     ! -- AUXILIARY DATA -- !
     real(dp) :: startTime, endTime, totalTime
     real(dp) :: time1, time2
@@ -51,12 +50,42 @@ program generatesdf
     call cpu_time(time1)
     print *, "-- Finished pre-processing geometry in ",time1-startTime,"seconds..."
     ! Compute the signed-distance-field
-    print *, "*** Calculating the signed-distance-field ***"
-    call compute_scalar_distance_face(sz,ez,xf,yp,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)
+    print *, "*** Calculating the signed-distance-field | u-faces ***"
+    call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xf,yp,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    
     ! Write file to binary format
     call cpu_time(time1)
     print *, "*** Writing output data to file ***"
-    call write2binary('data/sdf.bin',sdf)
+    call write2binary('data/sdfu.bin',sdf)
+    call cpu_time(time2)
+    print *, "-- Done with file write in ", time2-time1,"seconds..."
+    ! V - Faces
+    sdf = scalarvalue           ! Reset initial value
+    print *, "*** Calculating the signed-distance-field | v-faces ***"
+    call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xp,yf,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    
+    ! Write file to binary format
+    call cpu_time(time1)
+    print *, "*** Writing output data to file ***"
+    call write2binary('data/sdfv.bin',sdf)
+    call cpu_time(time2)
+    print *, "-- Done with file write in ", time2-time1,"seconds..."
+    ! W - Faces
+    sdf = scalarvalue           ! Reset initial value
+    print *, "*** Calculating the signed-distance-field | w-faces ***"
+    call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xp,yp,zf,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    
+    ! Write file to binary format
+    call cpu_time(time1)
+    print *, "*** Writing output data to file ***"
+    call write2binary('data/sdfw.bin',sdf)
+    call cpu_time(time2)
+    print *, "-- Done with file write in ", time2-time1,"seconds..."
+    ! Cell Center
+    sdf = scalarvalue           ! Reset initial value
+    print *, "*** Calculating the signed-distance-field | p-faces ***"
+    call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xp,yp,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    
+    ! Write file to binary format
+    call cpu_time(time1)
+    print *, "*** Writing output data to file ***"
+    call write2binary('data/sdfp.bin',sdf)
     call cpu_time(time2)
     print *, "-- Done with file write in ", time2-time1,"seconds..."
     ! Log CPU time at the end of the program
