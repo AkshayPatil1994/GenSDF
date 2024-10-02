@@ -471,13 +471,13 @@ contains
         print *, "Min-Max z:", sz, zin(sz), "|", ez, zin(ez)
     end subroutine tagminmax
 
-    subroutine compute_scalar_distance_face(zstart,zend,xin,yin,zin,nfaces,input_faces,input_face_normals,input_vertices,input_normals,buffer_point_size,distance)
+    subroutine compute_scalar_distance_face(xstart,xend,ystart,yend,zstart,zend,xin,yin,zin,nfaces,input_faces,input_face_normals,input_vertices,input_normals,buffer_point_size,distance)
         !
         ! This subroutine computes the shortest distance between the input geometry face and the query points on the grid
         !
         implicit none
         ! Input
-        integer, intent(in) :: zstart, zend
+        integer, intent(in) :: xstart,xend,ystart,yend, zstart, zend
         real(dp), intent(in), dimension(:) :: xin, yin, zin
         integer, intent(in) :: nfaces
         real(dp), intent(in), dimension(:,:) :: input_vertices, input_normals
@@ -486,81 +486,106 @@ contains
         ! Output
         real(dp), intent(out), dimension(:,:,:) :: distance
         ! Local variables
-        integer :: face_id, ii, jj, kk 
+        integer :: face_id, ii, jj, kk  
         real(dp), dimension(3) :: vertex_1, vertex_2, vertex_3
         real(dp), dimension(3) :: norm_vert_1, norm_vert_2, norm_vert_3
         real(dp), dimension(3) :: min_query, max_query
         integer, dimension(3) :: min_index, max_index
         real(dp), dimension(3) :: query_point
         real(dp) :: temp_distance
+        real(dp) :: avg_normal_mag_inv
         real(dp) :: deltax_inverse, deltay_inverse
         real(dp) :: avg_normal(3)
         real(dp) :: temp_value(2)
         real(dp) :: stime
             
         ! Query the start time to add to the progress bar
-        call cpu_time(stime)
-         
+        call cpu_time(stime)        
+
         ! Compute the grid spacing and inverse
         deltax_inverse = 1.0_dp/(xin(10) - xin(9))
         deltay_inverse = 1.0_dp/(yin(10) - yin(9))
     
         ! Loop over all the faces of the geometry
         do face_id=1,nfaces
-          call show_progress(face_id,nfaces,pbarwidth,stime)
-          ! Get the vertices corresponding to this face
-          vertex_1 = input_vertices(:,input_faces(1,face_id))
-          vertex_2 = input_vertices(:,input_faces(2,face_id))
-          vertex_3 = input_vertices(:,input_faces(3,face_id))
-          ! Get the vertex normals corresponding to the this faces
-          norm_vert_1 = input_normals(:,input_face_normals(1,face_id))
-          norm_vert_2 = input_normals(:,input_face_normals(2,face_id))
-          norm_vert_3 = input_normals(:,input_face_normals(3,face_id))
-          ! Get the average normal cooresponding to this face
-          avg_normal(1) = norm_vert_1(1) + norm_vert_2(1) + norm_vert_3(1)
-          avg_normal(2) = norm_vert_1(2) + norm_vert_2(2) + norm_vert_3(2)
-          avg_normal(3) = norm_vert_1(3) + norm_vert_2(3) + norm_vert_3(3)
-          ! Compute the bounding box based on the min-max of these three vertices to shrink the query points
-          do ii=1,3
-            min_query(ii) = min(vertex_1(ii),vertex_2(ii),vertex_3(ii))
-            max_query(ii) = max(vertex_1(ii),vertex_2(ii),vertex_3(ii))
-          end do
-          ! Now locate the min and max indices to loop over (face-local bounding box)
-          min_index(1) = floor(min_query(1) * deltax_inverse) - buffer_point_size
-          min_index(2) = floor(min_query(2) * deltay_inverse) - buffer_point_size
-          max_index(1) = floor(max_query(1) * deltax_inverse) + buffer_point_size
-          max_index(2) = floor(max_query(2) * deltay_inverse) + buffer_point_size
-          ! Min locator
-          kk = zstart
-          min_index(3) = zstart       ! Assign first query point as minimum if condition is not met 
-          do while (kk <= zend .and. zin(kk) <= min_query(3))
-            min_index(3) = kk - buffer_point_size
-            kk = kk + 1
-          end do
-          ! Ensure min_index(3) stays within bounds
-          min_index(3) = min(min_index(3), zstart)
-          ! Max locator
-          kk = zstart
-          max_index(3) = zend       ! Assign last query point as minimum if condition is not met 
-          do while (kk<=zend .and. zin(kk) <= max_query(3))
-            max_index(3) = kk + buffer_point_size
-            kk = kk + 1
-          end do
-          ! Ensure max_index(3) statys in bounds
-          max_index(3) = min(max_index(3), zend)
-          ! Now loop over the face-local bounding box and compute the distance to the triangle
-          if (min_index(1) >= 1 .and. max_index(1) <= nx .and. min_index(2) >= 1 .and. max_index(2) <= ny .and. min_index(3) >= 1 .and. max_index(3) <= nz) then
-            do kk=min_index(3),max_index(3)
-              do jj=min_index(2),max_index(2)
-                do ii=min_index(1),max_index(1)
-                  query_point = [xin(ii),yin(jj),zin(kk)]
-                  call distance_point_to_triangle(query_point, vertex_1, vertex_2, vertex_3, avg_normal, temp_distance)
-                  temp_value = [temp_distance,distance(ii,jj,kk)]
-                  distance(ii,jj,kk) = temp_value(minloc(abs(temp_value),dim=1))          
-                end do
-              end do
+            call show_progress(face_id,nfaces,pbarwidth,stime)
+            ! Get the vertices corresponding to this face
+            vertex_1 = input_vertices(:,input_faces(1,face_id))
+            vertex_2 = input_vertices(:,input_faces(2,face_id))
+            vertex_3 = input_vertices(:,input_faces(3,face_id))
+            ! Get the vertex normals corresponding to the this faces
+            norm_vert_1 = input_normals(:,input_face_normals(1,face_id))
+            norm_vert_2 = input_normals(:,input_face_normals(2,face_id))
+            norm_vert_3 = input_normals(:,input_face_normals(3,face_id))
+            ! Get the average normal cooresponding to this face
+            avg_normal(1) = norm_vert_1(1) + norm_vert_2(1) + norm_vert_3(1)
+            avg_normal(2) = norm_vert_1(2) + norm_vert_2(2) + norm_vert_3(2)
+            avg_normal(3) = norm_vert_1(3) + norm_vert_2(3) + norm_vert_3(3)
+            ! Get magnitude of the avg_normal
+            avg_normal_mag_inv = 1.0_dp/sqrt(dot_product(avg_normal,avg_normal))
+            ! Normalise the vector
+            avg_normal = avg_normal*avg_normal_mag_inv
+            ! Compute the bounding box based on the min-max of these three vertices to shrink the query points
+            do ii=1,3
+                min_query(ii) = min(vertex_1(ii),vertex_2(ii),vertex_3(ii)) 
+                max_query(ii) = max(vertex_1(ii),vertex_2(ii),vertex_3(ii))       
             end do
-          endif
+            ! Now locate the min indices to loop over (face-local bounding box)
+            min_index(1) = floor(min_query(1) * deltax_inverse) - buffer_point_size
+            max_index(1) = floor(max_query(1) * deltax_inverse) + buffer_point_size
+            min_index(2) = floor(min_query(2) * deltay_inverse) - buffer_point_size
+            max_index(2) = floor(max_query(2) * deltay_inverse) + buffer_point_size            
+            ! Z direction can be non-homogeneous, hence special case loop
+            ! kk = zstart
+            ! do while (zin(kk) <= min_query(3))
+            !     min_index(3) = kk
+            !     kk = kk + 1                
+            ! end do
+            ! if(kk > zend) kk = kk - 1
+            ! min_index(3) = min_index(3) - buffer_point_size 
+            ! ! Max query
+            ! kk = zstart
+            ! do while (zin(kk) <= max_query(3))
+            !     max_index(3) = kk
+            !     kk = kk + 1                
+            ! end do
+            ! if(kk > zend) kk = kk - 1
+            ! max_index(3) = max_index(3) + buffer_point_size 
+            ! Z direction can be non-homogeneous, hence special case loop
+            ! Z direction can be non-homogeneous, hence special case loop
+            kk = zstart
+            min_index(3) = zend  ! Initialize to the maximum possible index
+            do while (kk <= zend)
+                if (zin(kk) > min_query(3)) exit
+                min_index(3) = kk
+                kk = kk + 1
+            end do
+            min_index(3) = max(min_index(3) - buffer_point_size, zstart)
+
+            ! Max query for Z direction
+            kk = zstart
+            max_index(3) = zstart  ! Initialize to the minimum possible index
+            do while (kk <= zend)
+                if (zin(kk) > max_query(3)) exit
+                max_index(3) = kk
+                kk = kk + 1
+            end do
+            max_index(3) = min(max_index(3) + buffer_point_size, zend)
+            
+            ! Now loop and calculate distance 
+            do kk=min_index(3),max_index(3)
+                do jj=min_index(2),max_index(2)
+                    do ii=min_index(1),max_index(1)                        
+                        ! Check if indices are within bounds
+                        if (ii >= xstart .and. ii <= xend .and. jj >= ystart .and. jj <= yend .and. kk >= zstart .and. kk <= zend) then
+                            query_point = [xin(ii),yin(jj),zin(kk)]
+                            call distance_point_to_triangle(query_point, vertex_1, vertex_2, vertex_3, avg_normal, temp_distance)
+                            temp_value = [temp_distance,distance(ii,jj,kk)]
+                            distance(ii,jj,kk) = temp_value(minloc(abs(temp_value),dim=1))
+                        end if
+                    end do
+                end do
+            end do                  
     
         end do
     
@@ -599,7 +624,7 @@ contains
         ! Calculate the distance between the query point and the closest point on the triangle
         dist_vec = point - proj
         temp_dot_result = dot_product(dist_vec,avg_normal)
-        ! Check the orientation of the point w.r.t to the outward normal
+        ! Perpendicularity check for query point
         sign_indicator = sign(1.0_dp,temp_dot_result)
         dist_to_face = sign_indicator*sqrt(dot_product(dist_vec, dist_vec))
         
@@ -678,8 +703,11 @@ contains
         ! Input
         character(len=*), intent(in) :: outputfilename
         real(dp), intent(in), dimension(:,:,:) :: finaloutput                
-        ! Write the mask to file
-        open(unit=10, file=trim(outputfilename), status='replace', form='unformatted')
+        ! Write the mask to file        
+        ! Access=stream does not add 4 bytes at the start and end of the binary file
+        open(unit=10, file=trim(outputfilename), access='stream', status='replace', form='unformatted')
+        ! WARNING: Line below will add 4 bytes at the start and end of the file
+        !open(unit=10, file=trim(outputfilename), status='replace', form='unformatted')
         write(10) finaloutput
         close(10)
     end subroutine write2binary
