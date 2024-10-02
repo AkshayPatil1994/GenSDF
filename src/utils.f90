@@ -62,7 +62,7 @@ contains
         
     end subroutine read_inputfile
 
-    subroutine read_cans_grid(loc, iprecision, npoints, origin, non_uni_grid, xin_p, yin_p, zin_p, xin_f, yin_f, zin_f, dzin, lx, ly, lz)
+    subroutine read_cans_grid(loc, iprecision, npoints, origin, non_uni_grid, xin_p, yin_p, zin_p, xin_f, yin_f, zin_f, dzin, inputlx, inputly, inputlz)
         !
         ! This subroutine reads the CaNS grid to memory
         !
@@ -76,7 +76,7 @@ contains
         real(dp), intent(out), allocatable, dimension(:) :: xin_p, yin_p, zin_p   ! Centered grid arrays
         real(dp), intent(out), allocatable, dimension(:) :: xin_f, yin_f, zin_f   ! Staggered grid arrays
         real(dp), intent(out), allocatable, dimension(:) :: dzin                  ! Grid spacing in z
-    real(dp), intent(out) :: lx, ly, lz                                           ! Domain size in x y and z
+        real(dp), intent(out) :: inputlx, inputly, inputlz                        ! Domain size in x y and z
         ! Local variables
         logical :: fexists                                    ! File exists boolean
         integer :: iter                                       ! Local Iterator
@@ -84,74 +84,74 @@ contains
         real(sp), allocatable :: grid_z4(:,:)                 ! For non-uniform grid, single precision
         real(dp), allocatable :: grid_z8(:,:)                 ! For non-uniform grid, double precision
         character(len=512) :: geofile, grdfile                ! Filenames for geometry.out and grid.out
-
+    
         ! Check the file directory
         inquire(file=trim(loc), exist=fexists)
-        if (fexists .eqv. .False.) then
-        print*, "The input directory does not exist: ", trim(loc)
-        stop
+        if (fexists .eqv. .false.) then
+            print*, "The input directory does not exist: ", trim(loc)
+            stop
         endif
-
+    
         ! File paths
         geofile = trim(loc) // "geometry.out"
-
+    
         ! Read geometry file
         open(unit=10, file=geofile, status='old')
         read(10, *) npoints      ! Read the grid size (x, y, z)
         read(10, *) l            ! Read the domain lengths
         close(10)
-
-        ! Set the values for lx, ly, lz
-        lx = l(1)
-        ly = l(2)
-        lz = l(3)
-
+    
+        ! Set the values for inputlx, inputly, inputlz
+        inputlx = l(1)
+        inputly = l(2)
+        inputlz = l(3)
+    
         ! Calculate grid spacing
         dl = l / real(npoints, 8)
-
+    
         ! Generate centered grids
         allocate(xin_p(npoints(1)), yin_p(npoints(2)), zin_p(npoints(3)))
         allocate(xin_f(npoints(1)), yin_f(npoints(2)), zin_f(npoints(3)))
         allocate(dzin(npoints(3)))
-
+    
         do iter = 1, npoints(1)
-        xin_p(iter) = origin(1) + (iter - 0.5) * dl(1)  ! Centered x grid
-        xin_f(iter) = xin_p(iter) + dl(1) / 2.0        ! Staggered x grid
+            xin_p(iter) = origin(1) + (iter - 0.5) * dl(1)  ! Centered x grid
+            xin_f(iter) = xin_p(iter) + dl(1) / 2.0        ! Staggered x grid
         end do
-
+    
         do iter = 1, npoints(2)
-        yin_p(iter) = origin(2) + (iter - 0.5) * dl(2)  ! Centered y grid
-        yin_f(iter) = yin_p(iter) + dl(2) / 2.0        ! Staggered y grid
+            yin_p(iter) = origin(2) + (iter - 0.5) * dl(2)  ! Centered y grid
+            yin_f(iter) = yin_p(iter) + dl(2) / 2.0        ! Staggered y grid
         end do
-
+    
         do iter = 1, npoints(3)
-        zin_p(iter) = origin(3) + (iter - 0.5) * dl(3)  ! Centered z grid
-        zin_f(iter) = zin_p(iter) + dl(3) / 2.0         ! Staggered z grid
+            zin_p(iter) = origin(3) + (iter - 0.5) * dl(3)  ! Centered z grid
+            zin_f(iter) = zin_p(iter) + dl(3) / 2.0         ! Staggered z grid
         end do
-
+    
         ! Non-uniform grid handling
         if (non_uni_grid) then
-        grdfile = trim(loc) // "grid.bin"
-
-        if (iprecision == 4) then
-            open(unit=20, file=grdfile, form="unformatted", access="stream")
-            allocate(grid_z4(npoints(3), 4))
-            read(20) grid_z4  ! Read the grid_z binary file
-            close(20)
-            zin_p = origin(3) + grid_z4(:,2)
-            zin_f = origin(3) + grid_z4(:,3)
-        else if (iprecision == 8) then
-            open(unit=20, file=grdfile, form="unformatted", access="stream")
-            allocate(grid_z8(npoints(3), 4))
-            read(20) grid_z8  ! Read the grid_z binary file
-            close(20)
-            zin_p = origin(3) + grid_z8(:,2)
-            zin_f = origin(3) + grid_z8(:,3)
+            grdfile = trim(loc) // "grid.bin"
+    
+            if (iprecision == 4) then
+                open(unit=20, file=grdfile, form="unformatted", access="stream")
+                allocate(grid_z4(npoints(3), 4))
+                read(20) grid_z4  ! Read the grid_z binary file
+                close(20)
+                zin_p = origin(3) + grid_z4(:,2)
+                zin_f = origin(3) + grid_z4(:,3)
+            else if (iprecision == 8) then
+                open(unit=20, file=grdfile, form="unformatted", access="stream")
+                allocate(grid_z8(npoints(3), 4))
+                read(20) grid_z8  ! Read the grid_z binary file
+                close(20)
+                zin_p = origin(3) + grid_z8(:,2)
+                zin_f = origin(3) + grid_z8(:,3)
+            endif
         endif
-        endif
-
-        print *, "*** Sucessfully read the CaNS grid ***"
-
+    
+        print *, "*** Successfully read the CaNS grid ***"
+    
     end subroutine read_cans_grid
 
     subroutine read_obj(filename, vertices, normals, faces, face_normals, num_vertices, num_normals, num_faces)
@@ -279,12 +279,12 @@ contains
         !
         implicit none
         ! Input
-        character(len=512), intent(inout) :: line
+        character(len=512), intent(inout) :: line               ! Line to be parsed
         ! Output
-        integer, intent(out) :: v1, vn1, v2, vn2, v3, vn3
+        integer, intent(out) :: v1, vn1, v2, vn2, v3, vn3       ! Vertex and Vertex normal values
         ! Local Variables
-        character(len=32) :: part
-        integer :: pos
+        character(len=32) :: part                               ! Temp char variable to split line
+        integer :: pos                                          ! Position counter
     
         ! Parse first vertex-normal pair (v1//vn1)
         pos = index(line, ' ')
@@ -310,11 +310,11 @@ contains
         !
         implicit none
         ! Input
-        character(len=*), intent(inout) :: pair
+        character(len=*), intent(inout) :: pair                     ! Character to parse pair
         ! Output
-        integer, intent(out) :: vertex, normal
+        integer, intent(out) :: vertex, normal                      ! Vertex and normal ID
         ! Local Variables
-        integer :: double_slash_pos
+        integer :: double_slash_pos                                 ! Identifier for double slash to trim
     
         ! Find the position of the double slash (//)
         double_slash_pos = index(pair, '//')
@@ -336,11 +336,11 @@ contains
         !
         implicit none
         ! Input
-        real(dp), intent(in), dimension(:) :: xin, yin, zin
-        integer, intent(in) :: nz_in
+        real(dp), intent(in), dimension(:) :: xin, yin, zin                     ! Input grid arrays
+        integer, intent(in) :: nz_in                                            ! Number of points in z
         ! Output
-        real(dp), intent(out) :: dx_out, dy_out, dx_inv_out, dy_inv_out
-        real(dp), intent(out), dimension(:) :: dz_out, dz_inv_out
+        real(dp), intent(out) :: dx_out, dy_out, dx_inv_out, dy_inv_out         ! Grid size in x and y (normal + inverse)
+        real(dp), intent(out), dimension(:) :: dz_out, dz_inv_out               ! Grid size in z (arrays, normal + inverse)
         ! Local variable
         integer :: ii
         
@@ -419,7 +419,7 @@ contains
         integer, intent(out) :: sx,ex,sy,ey,sz,ez                               ! Start-end index
         ! Local variables
         integer :: iteri, iterj, iterk                                          ! Iterators
-        real(dp) :: buffer_distance
+        real(dp) :: buffer_distance                                             ! Buffer distance check
     
         ! Set min and max to domain extents
         sx = 1
@@ -477,27 +477,27 @@ contains
         !
         implicit none
         ! Input
-        integer, intent(in) :: xstart,xend,ystart,yend, zstart, zend
-        real(dp), intent(in), dimension(:) :: xin, yin, zin
-        integer, intent(in) :: nfaces
-        real(dp), intent(in), dimension(:,:) :: input_vertices, input_normals
-        integer, intent(in), dimension(:,:) :: input_faces, input_face_normals
-        integer, intent(in) :: buffer_point_size
+        integer, intent(in) :: xstart,xend,ystart,yend, zstart, zend            ! Start and Ending indices for the bounding box loop
+        real(dp), intent(in), dimension(:) :: xin, yin, zin                     ! Cartesian grid over which SDF is to be computed
+        integer, intent(in) :: nfaces                                           ! Number of faces in the geometry
+        real(dp), intent(in), dimension(:,:) :: input_vertices, input_normals   ! Vertex and vertex normal arrays
+        integer, intent(in), dimension(:,:) :: input_faces, input_face_normals  ! Faces and face normal indices
+        integer, intent(in) :: buffer_point_size                                ! Number of buffer points - Narrow band size
         ! Output
-        real(dp), intent(out), dimension(:,:,:) :: distance
+        real(dp), intent(out), dimension(:,:,:) :: distance                     ! Signed-Distance-Array
         ! Local variables
-        integer :: face_id, ii, jj, kk  
-        real(dp), dimension(3) :: vertex_1, vertex_2, vertex_3
-        real(dp), dimension(3) :: norm_vert_1, norm_vert_2, norm_vert_3
-        real(dp), dimension(3) :: min_query, max_query
-        integer, dimension(3) :: min_index, max_index
-        real(dp), dimension(3) :: query_point
-        real(dp) :: temp_distance
-        real(dp) :: avg_normal_mag_inv
-        real(dp) :: deltax_inverse, deltay_inverse
-        real(dp) :: avg_normal(3)
-        real(dp) :: temp_value(2)
-        real(dp) :: stime
+        integer :: face_id, ii, jj, kk                                          ! Grid and face iterators
+        real(dp), dimension(3) :: vertex_1, vertex_2, vertex_3                  ! Vertices for nth face
+        real(dp), dimension(3) :: norm_vert_1, norm_vert_2, norm_vert_3         ! Vertex normals for nth face
+        real(dp), dimension(3) :: min_query, max_query                          ! Min-max query points
+        integer, dimension(3) :: min_index, max_index                           ! Min-max query point indices
+        real(dp), dimension(3) :: query_point                                   ! Local query point
+        real(dp) :: temp_distance                                               ! nth face distance - temp comparison
+        real(dp) :: avg_normal_mag_inv                                          ! Inverse of average normal L2 norm
+        real(dp) :: deltax_inverse, deltay_inverse                              ! Grid size in x and y - Inverse 
+        real(dp) :: avg_normal(3)                                               ! Average face normal (only for orientation)
+        real(dp) :: temp_value(2)                                               ! Temporary signed value array for comparison (signed)                                            
+        real(dp) :: stime                                                       ! Starting time of the calculation
             
         ! Query the start time to add to the progress bar
         call cpu_time(stime)        
@@ -534,24 +534,7 @@ contains
             min_index(1) = floor(min_query(1) * deltax_inverse) - buffer_point_size
             max_index(1) = floor(max_query(1) * deltax_inverse) + buffer_point_size
             min_index(2) = floor(min_query(2) * deltay_inverse) - buffer_point_size
-            max_index(2) = floor(max_query(2) * deltay_inverse) + buffer_point_size            
-            ! Z direction can be non-homogeneous, hence special case loop
-            ! kk = zstart
-            ! do while (zin(kk) <= min_query(3))
-            !     min_index(3) = kk
-            !     kk = kk + 1                
-            ! end do
-            ! if(kk > zend) kk = kk - 1
-            ! min_index(3) = min_index(3) - buffer_point_size 
-            ! ! Max query
-            ! kk = zstart
-            ! do while (zin(kk) <= max_query(3))
-            !     max_index(3) = kk
-            !     kk = kk + 1                
-            ! end do
-            ! if(kk > zend) kk = kk - 1
-            ! max_index(3) = max_index(3) + buffer_point_size 
-            ! Z direction can be non-homogeneous, hence special case loop
+            max_index(2) = floor(max_query(2) * deltay_inverse) + buffer_point_size                        
             ! Z direction can be non-homogeneous, hence special case loop
             kk = zstart
             min_index(3) = zend  ! Initialize to the maximum possible index
@@ -591,6 +574,100 @@ contains
     
     end subroutine compute_scalar_distance_face
 
+    subroutine fill_internal(grid, inx, iny, inz, sx, sy, sz, ex, ey, ez, large_negative_value)
+        ! 
+        ! This subroutine uses the flood-fill algorithm to fill in values inside the geometry
+        !        
+        implicit none
+        ! Input
+        integer, intent(in) :: inx, iny, inz                ! Number of grid points
+        integer, intent(in) :: sx, sy, sz, ex, ey, ez       ! Starting and ending indices of the bounding box
+        real(dp), intent(in) :: large_negative_value        ! Large negative value to be set inside
+        ! Output
+        real(dp), intent(inout) :: grid(inx, iny, inz)      ! Array with distance pre-computed            
+        ! Local variables
+        logical, allocatable :: visited(:,:,:)              ! Boolean array for points visited
+        integer :: ii, jj, kk, ci, cj, ck                   ! Iterators
+        integer :: top, i_dir                               ! Stack locators for visited points
+        integer, allocatable :: stack(:,:)                  ! Array storing the visited points stack
+        integer :: ni, nj, nk                               ! Local iterators            
+        integer, parameter :: n_dirs = 6                    ! Directions for neighbors
+        integer :: dirs(3, n_dirs) = reshape([ &            ! Array with directions i.e., 6
+            1,  0,  0, -1,  0,  0, &    ! x+1, x-1
+            0,  1,  0,  0, -1,  0, &    ! y+1, y-1
+            0,  0,  1,  0,  0, -1], &   ! z+1, z-1
+            shape=[3, n_dirs])
+    
+        ! Allocate arrays
+        allocate(visited(inx, iny, inz))
+        allocate(stack(3, (ex - sx + 1) * (ey - sy + 1) * (ez - sz + 1)))  ! Stack for flood fill, size large enough for the entire subregion
+    
+        ! Initialize the visited array to false
+        visited = .false.
+    
+        ! Mark all points on the boundaries of the subregion as starting points for exterior flood fill
+        top = 0
+        do kk = sz, ez
+            do jj = sy, ey
+                do ii = sx, ex
+                    if (ii == sx .or. ii == ex .or. jj == sy .or. jj == ey .or. kk == sz .or. kk == ez) then
+                        if (grid(ii, jj, kk) >= 0.0_dp .and. .not. visited(ii, jj, kk)) then
+                            ! Add boundary point to stack for flood fill
+                            top = top + 1
+                            stack(:, top) = [ii, jj, kk]
+                            visited(ii, jj, kk) = .true.
+                        end if
+                    end if
+                end do
+            end do
+        end do
+    
+        ! Flood fill to mark all exterior points that are reachable from the boundary
+        do while (top > 0)
+            ! Pop the current point from the stack
+            ci = stack(1, top)
+            cj = stack(2, top)
+            ck = stack(3, top)
+            top = top - 1
+    
+            ! Traverse all neighboring points
+            do i_dir = 1, n_dirs
+                ni = ci + dirs(1, i_dir)
+                nj = cj + dirs(2, i_dir)
+                nk = ck + dirs(3, i_dir)
+    
+                ! Check if the neighbor is within bounds of the subregion
+                if (ni >= sx .and. ni <= ex .and. &
+                    nj >= sy .and. nj <= ey .and. &
+                    nk >= sz .and. nk <= ez) then
+    
+                    if (.not. visited(ni, nj, nk) .and. grid(ni, nj, nk) >= 0.0_dp) then
+                        ! Mark as visited and add to stack
+                        top = top + 1
+                        stack(:, top) = [ni, nj, nk]
+                        visited(ni, nj, nk) = .true.
+                    end if
+                end if
+            end do
+        end do
+    
+        ! Set a large value for points are never visited then require filling
+        do kk = sz, ez
+            do jj = sy, ey
+                do ii = sx, ex                    
+                    if (.not. visited(ii, jj, kk)) then
+                        grid(ii, jj, kk) = large_negative_value
+                    end if
+                end do
+            end do
+        end do
+    
+        ! Deallocate arrays
+        deallocate(visited)
+        deallocate(stack)
+    
+    end subroutine fill_internal
+
     subroutine distance_point_to_triangle(point, vert0, vert1, vert2, avg_normal, dist_to_face)
         !
         ! This subroutine computes the distance between a point and a triangle
@@ -603,9 +680,10 @@ contains
         ! Output
         real(dp), intent(out) :: dist_to_face                   ! Distance between point and triangle
         ! Local variables
-        real(dp) :: edge0(3), edge1(3), v0p(3), n(3), dist_vec(3), proj(3)
-        real(dp) :: d, denom, param_s, param_t
-        real(dp) :: sign_indicator, temp_dot_result            
+        real(dp) :: edge0(3), edge1(3), v0p(3), n(3), dist_vec(3), proj(3)  ! Edge vectors 
+        real(dp) :: d, denom, param_s, param_t                  ! Plane parameters on the triangle
+        real(dp) :: sign_indicator, temp_dot_result             ! Temporary results 
+
         ! Compute the edges of the triangle
         edge0 = vert1 - vert0                               ! Edge v0->v1
         edge1 = vert2 - vert0                               ! Edge v0->v2
@@ -642,8 +720,9 @@ contains
         ! Output
         real(dp), intent(out) :: param_s, param_t               ! Barycentric coordinates of the point projection    
         ! Local variables
-        real(dp) :: edge0(3), edge1(3), v0p(3)
-        real(dp) :: a, b, c, d, e, det
+        real(dp) :: edge0(3), edge1(3), v0p(3)                  ! Edge vectors
+        real(dp) :: a, b, c, d, e, det                          ! Parameters for dot-product
+
         ! Compute the edges of the triangle
         edge0 = vert1 - vert0   ! Edge v0->v1
         edge1 = vert2 - vert0   ! Edge v0->v2
@@ -701,9 +780,9 @@ contains
         !
         implicit none
         ! Input
-        character(len=*), intent(in) :: outputfilename
-        real(dp), intent(in), dimension(:,:,:) :: finaloutput                
-        ! Write the mask to file        
+        character(len=*), intent(in) :: outputfilename              ! Outputfilename
+        real(dp), intent(in), dimension(:,:,:) :: finaloutput       ! Array to be written
+
         ! Access=stream does not add 4 bytes at the start and end of the binary file
         open(unit=10, file=trim(outputfilename), access='stream', status='replace', form='unformatted')
         ! WARNING: Line below will add 4 bytes at the start and end of the file
@@ -719,13 +798,14 @@ contains
         !
         implicit none
         ! Input
-        integer, intent(in) :: current, total, width
-        real(dp), intent(in) :: start_time
+        integer, intent(in) :: current, total               ! Current and total values
+        integer, intent(in) :: width                        ! Width of the progress bar
+        real(dp), intent(in) :: start_time                  ! Start time of the process (computes estimated time)
         ! Local variables
-        integer :: progress
-        real(dp) :: percent, elapsed_time, estimated_time
-        character(len=width) :: bar
-        real(dp) :: current_time
+        integer :: progress                                 ! Current progress counter
+        real(dp) :: percent, elapsed_time, estimated_time   ! Percentage completition and time counters
+        character(len=width) :: bar                         ! Character bar size
+        real(dp) :: current_time                            ! Log for current time
     
         ! Get the current time
         call cpu_time(current_time)
@@ -762,7 +842,6 @@ contains
         ! This subroutine prints the logo of `genSDF`
         !
         implicit none
-
         print *, " ░▒▓██████▓▒░░▒▓████████▓▒░▒▓███████▓▒░ ░▒▓███████▓▒░▒▓███████▓▒░░▒▓████████▓▒░ "
         print *, "░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░        "
         print *, "░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░        "
