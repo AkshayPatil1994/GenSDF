@@ -4,7 +4,8 @@ program generatesdf
     !
     ! Subroutines from utils
     use utils, only : printlogo, read_inputfile, read_cans_grid, setup_grid_spacing, &
-                      read_obj, getbbox, tagminmax, compute_scalar_distance_face, write2binary
+                      read_obj, getbbox, tagminmax, compute_scalar_distance_face, write2binary, &
+                      fill_internal
     ! Data from utils
     use utils, only : dp, inputfilename, nx, ny, nz, lx, ly, lz, r0, ng, non_uniform_grid, &
                       xp, yp, zp, xf, yf, zf, dx, dx_inverse, dy, dy_inverse, dz, dz_inverse, &
@@ -52,6 +53,7 @@ program generatesdf
     ! Compute the signed-distance-field
     print *, "*** Calculating the signed-distance-field | u-faces ***"
     call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xf,yp,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    
+    call fill_internal(sdf, size(xf), size(yp), size(zp), sx, sy, sz, ex, ey, ez, -1000.0_dp)
     ! Write file to binary format
     call cpu_time(time1)
     print *, "*** Writing output data to file ***"
@@ -62,6 +64,7 @@ program generatesdf
     sdf = scalarvalue           ! Reset initial value
     print *, "*** Calculating the signed-distance-field | v-faces ***"
     call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xp,yf,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    
+    call fill_internal(sdf, size(xp), size(yf), size(zp), sx, sy, sz, ex, ey, ez, -1000.0_dp)
     ! Write file to binary format
     call cpu_time(time1)
     print *, "*** Writing output data to file ***"
@@ -72,6 +75,7 @@ program generatesdf
     sdf = scalarvalue           ! Reset initial value
     print *, "*** Calculating the signed-distance-field | w-faces ***"
     call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xp,yp,zf,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    
+    call fill_internal(sdf, size(xp), size(yp), size(zf), sx, sy, sz, ex, ey, ez, -1000.0_dp)
     ! Write file to binary format
     call cpu_time(time1)
     print *, "*** Writing output data to file ***"
@@ -82,6 +86,7 @@ program generatesdf
     sdf = scalarvalue           ! Reset initial value
     print *, "*** Calculating the signed-distance-field | p-faces ***"
     call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xp,yp,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    
+    call fill_internal(sdf, size(xp), size(yp), size(zp), sx, sy, sz, ex, ey, ez, -1000.0_dp)
     ! Write file to binary format
     call cpu_time(time1)
     print *, "*** Writing output data to file ***"
