@@ -8,5 +8,3 @@
 0.0 0.0 0.0
 ! non_uniform_grid
 0
-! GPU threads (decomposed along x | unsed for CPU jobs)
-64

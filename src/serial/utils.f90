@@ -19,8 +19,6 @@ module utils
     ! -- SDF data --
     real(dp), protected :: scalarvalue
     integer, protected :: buffer_points
-    ! -- GPU data --
-    integer, protected :: gpu_threads
     ! -- Auxiliar data --
     integer, protected :: pbarwidth
 
@@ -48,8 +46,6 @@ contains
             read(iunit,*,iostat=ierr) r0(1), r0(2), r0(3)
             read(iunit,*,iostat=ierr) dummyline
             read(iunit,*,iostat=ierr) non_uniform_grid
-            read(iunit,*,iostat=ierr) dummyline
-            read(iunit,*,iostat=ierr) gpu_threads    
             ! Setup what ng is 
             ng(1) = nx
             ng(2) = ny
