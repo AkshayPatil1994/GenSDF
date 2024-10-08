@@ -87,4 +87,4 @@ Figure: Comparison of the calculated SDF around the Stanford Armadillo geometry 
 3. Alternatively, you can also directly parse the binary file in Paraview or VisIT using the `.xmf` file format reader both for constant and variable grid spacing
 
 # Contributors
-Akshay P. & Udhaya C.K.P [https://github.com/udhaya-chandiran]
+Akshay & Udhaya [https://github.com/udhaya-chandiran]
