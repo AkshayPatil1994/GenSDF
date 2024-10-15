@@ -58,11 +58,12 @@ contains
         
     end subroutine read_inputfile
 
-    subroutine read_cans_grid(loc, iprecision, npoints, origin, non_uni_grid, xin_p, yin_p, zin_p, xin_f, yin_f, zin_f, dzin, inputlx, inputly, inputlz)
+    subroutine read_cans_grid(procid,loc, iprecision, npoints, origin, non_uni_grid, xin_p, yin_p, zin_p, xin_f, yin_f, zin_f, dzin, inputlx, inputly, inputlz)
         !
         ! This subroutine reads the CaNS grid to memory
         !
         ! Input
+        integer, intent(in) :: procid                         ! Processor ID
         character(len=*), intent(in) :: loc                   ! Directory location of the grid file
         integer, intent(in) :: iprecision                     ! Precision level (4 (single) or 8 (double))
         real(dp), dimension(3), intent(in) :: origin          ! Location of the origin
@@ -75,11 +76,12 @@ contains
         real(dp), intent(out) :: inputlx, inputly, inputlz                        ! Domain size in x y and z
         ! Local variables
         logical :: fexists                                    ! File exists boolean
-        integer :: iter                                       ! Local Iterator
+        integer :: iter, ii, jj                               ! Local Iterator
         real(dp) :: dl(3), l(3)                               ! Grid spacing and length
         real(sp), allocatable :: grid_z4(:,:)                 ! For non-uniform grid, single precision
         real(dp), allocatable :: grid_z8(:,:)                 ! For non-uniform grid, double precision
         character(len=512) :: geofile, grdfile                ! Filenames for geometry.out and grid.out
+        integer :: filerr                                     ! File error handle
     
         ! Check the file directory
         inquire(file=trim(loc), exist=fexists)
@@ -127,26 +129,46 @@ contains
     
         ! Non-uniform grid handling
         if (non_uni_grid) then
-            grdfile = trim(loc) // "grid.bin"
-    
+            grdfile = trim(loc) // "grid.out"
+            
             if (iprecision == 4) then
-                open(unit=20, file=grdfile, form="unformatted", access="stream")
-                allocate(grid_z4(npoints(3), 4))
-                read(20) grid_z4  ! Read the grid_z binary file
+                open(unit=20, file=grdfile, status = "old", action="read", iostat=filerr)
+                allocate(grid_z4(npoints(3),5))
+                if (filerr /= 0) then
+                    error stop "Error opening grid file...."
+                endif
+
+                do ii=1,npoints(3)
+                    read(20,*,iostat=filerr) (grid_z4(ii,jj), jj=1,5)
+                    if (filerr /= 0) then
+                        error stop "Error reading line in file...."
+                    endif
+                end do
                 close(20)
+                ! Allocate the grid to the output arrays
                 zin_p = origin(3) + grid_z4(:,2)
                 zin_f = origin(3) + grid_z4(:,3)
-            else if (iprecision == 8) then
-                open(unit=20, file=grdfile, form="unformatted", access="stream")
-                allocate(grid_z8(npoints(3), 4))
-                read(20) grid_z8  ! Read the grid_z binary file
+            else
+                open(unit=20, file=grdfile, status = "old", action="read", iostat=filerr)
+                allocate(grid_z8(npoints(3),5))
+                if (filerr /= 0) then
+                    error stop "Error opening grid file...."
+                endif
+
+                do ii=1,npoints(3)
+                    read(20,*,iostat=filerr) (grid_z8(ii,jj), jj=1,5)
+                    if (filerr /= 0) then
+                        error stop "Error reading line in file...."
+                    endif
+                end do
                 close(20)
+                ! Allocate the grid to the output arrays
                 zin_p = origin(3) + grid_z8(:,2)
                 zin_f = origin(3) + grid_z8(:,3)
-            endif
+            endif                            
         endif
     
-        print *, "*** Successfully read the CaNS grid ***"
+        if (procid == 0) print *, "*** Successfully read the CaNS grid ***"
     
     end subroutine read_cans_grid
 
