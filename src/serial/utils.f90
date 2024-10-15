@@ -58,12 +58,11 @@ contains
         
     end subroutine read_inputfile
 
-    subroutine read_cans_grid(procid,loc, iprecision, npoints, origin, non_uni_grid, xin_p, yin_p, zin_p, xin_f, yin_f, zin_f, dzin, inputlx, inputly, inputlz)
+    subroutine read_cans_grid(loc, iprecision, npoints, origin, non_uni_grid, xin_p, yin_p, zin_p, xin_f, yin_f, zin_f, dzin, inputlx, inputly, inputlz)
         !
         ! This subroutine reads the CaNS grid to memory
         !
-        ! Input
-        integer, intent(in) :: procid                         ! Processor ID
+        ! Input        
         character(len=*), intent(in) :: loc                   ! Directory location of the grid file
         integer, intent(in) :: iprecision                     ! Precision level (4 (single) or 8 (double))
         real(dp), dimension(3), intent(in) :: origin          ! Location of the origin
@@ -168,7 +167,7 @@ contains
             endif                            
         endif
     
-        if (procid == 0) print *, "*** Successfully read the CaNS grid ***"
+        print *, "*** Successfully read the CaNS grid ***"
     
     end subroutine read_cans_grid
 
