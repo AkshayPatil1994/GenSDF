@@ -1,14 +1,10 @@
 ! Name and location of the inputfile
-'data/small_armadillo.obj'
-! Number of Rays
-3
+'data/torus.obj'
 ! Scalar value (real), sdfresolution (int), progressbarsize (int)  
-100.0 4 50
+100.0 4 40
 ! nx, ny, nz (Computational Grid)
 512 128 128
 ! r0 (Origin of the computational grid)
 0.0 0.0 0.0
 ! non_uniform_grid
 0
-! GPU threads (decomposed along x | unsed for CPU jobs)
-64

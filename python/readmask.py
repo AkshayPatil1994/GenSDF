@@ -58,12 +58,12 @@ def read_grid(loc='data/',iprecision=8,ng=[10,10,10],r0=[0.,0.,0.],non_uniform_g
 
 # Example usage
 nx, ny, nz = 512, 128, 128
-filename1 = 'data/mask.bin'
+filename1 = 'data/sdfu.bin'
 # Load the grid for accurate location vtk write
 [xp,yp,zp,xf,yf,zf] = read_grid(loc='data/',iprecision=8,ng=[nx,ny,nz],r0=[0.,0.,0.],non_uniform_grid = True)
 # Load the data from binary file
 with open(filename1, 'rb') as f:
-    f.read(4)  # Skip the 4-byte Fortran marker
+    #f.read(4)  # Skip the 4-byte Fortran marker
     sdf = np.fromfile(f, count=nx * ny * nz)
 sdf = np.reshape(sdf, (nx, ny, nz), order='F')
 

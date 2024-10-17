@@ -1,10 +1,8 @@
 # Define the Fortran compilers
-NVFORTRAN = nvfortran
 GFORTRAN = gfortran
 
 # Define the flags for each compiler
-GFORTRANFLAGS = -O3 -ffree-line-length-none -cpp
-NVFORTRANFLAGS = -O3 -cuda -fast -Mpreprocess
+GFORTRANFLAGS = -O3 -fbounds-check -ffree-line-length-none -cpp
 
 # Define the source files
 SRCS = utils.f90 main.f90
@@ -12,19 +10,10 @@ SRCS = utils.f90 main.f90
 # Define the object files
 OBJS = $(SRCS:.f90=.o)
 
-# Output executable name
-EXE = gensdf
-
-# Check if _ISCUDA is set and define the compiler and flags accordingly
-ifeq ($(ISCUDA),True)
-  FC = $(NVFORTRAN)
-  FFLAGS = $(NVFORTRANFLAGS)
-  DEFINES = -D_ISCUDA
-else
-  FC = $(GFORTRAN)
-  FFLAGS = $(GFORTRANFLAGS)
-  DEFINES =
-endif
+FC = $(GFORTRAN)
+FFLAGS = $(GFORTRANFLAGS)
+DEFINES =
+EXE = gensdf_serial
 
 # Default target
 all: $(EXE)
@@ -39,11 +28,11 @@ $(EXE): $(OBJS)
 
 # Only remove module/object files
 clean:
-	rm -f $(OBJS)
+	rm -f $(OBJS) *.mod
 
 # All Clean target to remove object files and the executable
 allclean:
-	rm -f $(OBJS) $(EXE)
+	rm -f $(OBJS) *.mod gensdf_serial
 
 # Phony targets
 .PHONY: all clean
