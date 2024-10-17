@@ -1,3 +1,5 @@
+## Portions of this code taken from CaNS-world
+# Credits - P. Costa
 import numpy as np
 import os
 

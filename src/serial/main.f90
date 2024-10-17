@@ -5,20 +5,20 @@ program generatesdf
     ! Subroutines from utils
     use utils, only : printlogo, read_inputfile, read_cans_grid, setup_grid_spacing, &
                       read_obj, getbbox, tagminmax, compute_scalar_distance_face, write2binary, &
-                      fill_internal
+                      fill_internal, estimated_memoryusage
     ! Data from utils
     use utils, only : dp, inputfilename, nx, ny, nz, lx, ly, lz, r0, ng, non_uniform_grid, &
                       xp, yp, zp, xf, yf, zf, dx, dx_inverse, dy, dy_inverse, dz, dz_inverse, &
                       buffer_points, scalarvalue                    
     implicit none
     
-    ! Input geometry related data (Host i.e., CPU)
+    ! Input geometry related data
     integer :: nfaces, nvertices, nnormals                          ! Number of faces, vertices, and normals
     real(dp), allocatable, dimension(:,:) :: vertices, normals      ! Array that stores vertices & vertex normals information
     integer, allocatable, dimension(:,:) :: faces, face_normals     ! Array that stroes the face (vertex) and face_normal (vertex normals) ID
     real(dp), dimension(3) :: bbox_min, bbox_max                    ! Bounding box of the geometry
     integer :: sx, ex, sy, ey, sz, ez                               ! Tagged min-max indices on the grid
-    ! Signed-Distance-Field array (Host i.e., CPU)
+    ! Signed-Distance-Field array
     real(dp), allocatable, dimension(:,:,:) :: sdf  ! Signed distance field array  
     ! -- AUXILIARY DATA -- !
     real(dp) :: startTime, endTime, totalTime
@@ -50,6 +50,8 @@ program generatesdf
     ! Log CPU time at the end of pre-processing step
     call cpu_time(time1)
     print *, "-- Finished pre-processing geometry in ",time1-startTime,"seconds..."
+    ! Check estimated minimum memory required
+    call estimated_memoryusage(nfaces,nvertices,nx,ny,nz)
     ! Compute the signed-distance-field
     print *, "*** Calculating the signed-distance-field | u-faces ***"
     call compute_scalar_distance_face(sx,ex,sy,ey,sz,ez,xf,yp,zp,nfaces,faces,face_normals,vertices,normals,buffer_points,sdf)    

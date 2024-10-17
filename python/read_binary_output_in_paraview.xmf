@@ -9,15 +9,15 @@
     <Geometry GeometryType="VXVYVZ">
       <!-- X-coordinates -->
       <DataItem Format="Binary" DataType="Float" Precision="8" Endian="Native" Dimensions="512">
-        data/xgrid.bin
+        xgrid.bin
       </DataItem>
       <!-- Y-coordinates -->
       <DataItem Format="Binary" DataType="Float" Precision="8" Endian="Native" Dimensions="128">
-        data/ygrid.bin
+        ygrid.bin
       </DataItem>
       <!-- Z-coordinates -->
       <DataItem Format="Binary" DataType="Float" Precision="8" Endian="Native" Dimensions="128">
-        data/zgrid.bin
+        zgrid.bin
       </DataItem>
     </Geometry>
 
@@ -37,8 +37,8 @@
 
         <!-- Scalar field stored at each grid point (your binary data) -->
         <Attribute Name="SDF" AttributeType="Scalar" Center="Node">
-          <DataItem Format="Binary" DataType="Float" Precision="8" Endian="Native" Dimensions="128 128 512" Seek="4">
-            data/sdf.bin
+          <DataItem Format="Binary" DataType="Float" Precision="8" Endian="Native" Dimensions="128 128 512" Seek="0">
+            sdfu.bin
           </DataItem>
         </Attribute>
       </Grid>

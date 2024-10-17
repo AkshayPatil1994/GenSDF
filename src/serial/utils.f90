@@ -806,10 +806,10 @@ contains
         !open(unit=10, file=trim(outputfilename), status='replace', form='unformatted')
         write(10) finaloutput
         close(10)
-    end subroutine write2binary
+    end subroutine write2binary    
 
     subroutine show_progress(current, total, width, start_time)
-        ! 
+        !
         ! This subroutine aims to display a progress bar and overwrite the same line.
         ! It also displays elapsed time and estimated time remaining.
         !
@@ -820,7 +820,7 @@ contains
         real(dp), intent(in) :: start_time                  ! Start time of the process (computes estimated time)
         ! Local variables
         integer :: progress                                 ! Current progress counter
-        real(dp) :: percent, elapsed_time, estimated_time   ! Percentage completition and time counters
+        real(dp) :: percent, elapsed_time, estimated_time   ! Percentage completion and time counters
         character(len=width) :: bar                         ! Character bar size
         real(dp) :: current_time                            ! Log for current time
     
@@ -832,14 +832,19 @@ contains
     
         ! Estimate remaining time
         if (current > 0) then
-            estimated_time = elapsed_time / real(current) * (real(total) - real(current))
+            estimated_time = elapsed_time * (real(total, dp) - real(current, dp)) / real(current, dp)
         else
             estimated_time = 0.0_dp
         end if
     
         ! Calculate percentage and progress bar length
-        percent = real(current) / real(total) * 100.0
-        progress = int(real(current) / real(total) * width)
+        if (total > 0) then
+            percent = real(current, dp) / real(total, dp) * 100.0_dp
+            progress = int(real(current, dp) / real(total, dp) * width)
+        else
+            percent = 0.0_dp
+            progress = 0
+        end if
     
         ! Construct the progress bar string
         bar = repeat('|', progress) // repeat(' ', width - progress)
@@ -852,7 +857,31 @@ contains
         if (current == total) then
             print *  ! Move to the next line after the final iteration
         end if
+    
     end subroutine show_progress
+
+    subroutine estimated_memoryusage(input_nfaces,input_nvertices,in_nx,in_ny,in_nz)
+        !
+        ! This subroutine estimates the total memory usage for the given geometry
+        !    
+        implicit none
+        ! Input
+        integer, intent(in) :: input_nfaces, input_nvertices    ! Number of faces and vertices
+        integer, intent(in) :: in_nx, in_ny, in_nz                       ! Grid count in x, y, and z
+        ! Local Variables
+        real(dp) :: totalmemoryusage
+        character(len=256) :: stringmem
+
+        ! Estimate the total memory usage for largest arrays
+        totalmemoryusage = 6.0_dp*real(input_nfaces,kind=dp)*real(sizeof(in_nx),kind=dp)   ! 2, 3xnfaces arrays
+        totalmemoryusage = totalmemoryusage + 6.0_dp*real(input_nvertices,kind=dp)*real(sizeof(totalmemoryusage),kind=dp)   ! 2, 3xnvertices arrays
+        totalmemoryusage = totalmemoryusage + 2.0_dp*real(in_nx*in_ny*in_nz,kind=dp)*real(sizeof(totalmemoryusage),kind=dp)   ! 2, nx*ny*nz arrays (sdf,flood_fill)
+
+        ! Print to screen
+        write(stringmem,'(F5.2)') totalmemoryusage/1e9_dp
+        print *, "-- Estimated Minimum Memory usage: ", trim(stringmem), " GiB(s)..."
+
+    end subroutine estimated_memoryusage
 
     subroutine printlogo()
         !
