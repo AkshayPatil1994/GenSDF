@@ -8,7 +8,11 @@ MPI + Fortran based software to compute the signed-distance-field for OBJ file f
 cd src/serial
 make
 ```
+<<<<<<< HEAD
 ### For large problems - MPI version of the code can be used
+=======
+### For large problems - single GPU version of the code can be used
+>>>>>>> main
 ```
 cd src/mpi
 make
