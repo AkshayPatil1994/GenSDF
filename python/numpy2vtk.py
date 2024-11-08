@@ -59,16 +59,18 @@ def read_grid(loc='data/',iprecision=8,ng=[10,10,10],r0=[0.,0.,0.],non_uniform_g
     return xp, yp, zp, xu, yv, zw  
 
 def write_vtk(array, filename, x, y, z):
-    """
+    '''
     Write a 3D NumPy array to a VTK file in structured grid format with arbitrary x, y, z coordinates.
 
-    Parameters:
-    array (numpy.ndarray): The 3D array of scalar values (nx x ny x nz).
-    filename (str): The name of the output VTK file.
-    x (numpy.ndarray): The 1D array of x-coordinates (size nx).
-    y (numpy.ndarray): The 1D array of y-coordinates (size ny).
-    z (numpy.ndarray): The 1D array of z-coordinates (size nz).
-    """
+    INPUT
+        array:      [numpy.ndarray] The 3D array of scalar values (nx x ny x nz).
+        filename:   [str] The name of the output VTK file.
+        x:          [numpy.ndarray] The 1D array of x-coordinates (size nx).
+        y:          [numpy.ndarray] The 1D array of y-coordinates (size ny).
+        z:          [numpy.ndarray] The 1D array of z-coordinates (size nz).
+    OUTPUT
+        Writes a file with the given filename
+    '''
     nx, ny, nz = array.shape
     assert len(x) == nx, "Length of x must match the first dimension of array"
     assert len(y) == ny, "Length of y must match the second dimension of array"
