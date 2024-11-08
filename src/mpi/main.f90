@@ -50,7 +50,7 @@ program generatesdf
         ! Log CPU time at the start of the program
         call cpu_time(startTime)
         call printlogo()        
-        print *, " *** Starting with ",nprocs, "MPI ranks ***"
+        print *, "*** Starting with ",nprocs, "MPI ranks ***"
         if(nprocs == 1) then
             error stop ": Please use more than 1 processors to run the code!"        
         endif
