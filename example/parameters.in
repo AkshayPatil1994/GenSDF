@@ -1,5 +1,5 @@
 ! Name and location of the inputfile
-'data/torus.obj'
+'data/armadillo_withnormals.obj'
 ! Scalar value (real), sdfresolution (int), progressbarsize (int)  
 100.0 10 20
 ! nx, ny, nz (Computational Grid)
