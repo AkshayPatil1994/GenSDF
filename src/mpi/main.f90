@@ -102,7 +102,7 @@ program generatesdf
         call cpu_time(time1)
         print *, "-- Finished pre-processing geometry in ",time1-startTime,"seconds..."
         ! Check estimated minimum memory required
-        call estimated_memoryusage(nfaces,nvertices,nx,ny,nz)
+        call estimated_memoryusage(nprocs,nfaces,nvertices,nx,ny,nz)
         print *, "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - "   
         print *, "*** Calculating the signed-distance-field | u-faces ***"
     endif

@@ -907,12 +907,13 @@ contains
         close(10)
     end subroutine write2binary
 
-    subroutine estimated_memoryusage(input_nfaces,input_nvertices,in_nx,in_ny,in_nz)
+    subroutine estimated_memoryusage(n_procs,input_nfaces,input_nvertices,in_nx,in_ny,in_nz)
         !
         ! This subroutine estimates the total memory usage for the given geometry
         !    
         implicit none
         ! Input
+        integer, intent(in) :: n_procs                          ! Number of processors 
         integer, intent(in) :: input_nfaces, input_nvertices    ! Number of faces and vertices
         integer, intent(in) :: in_nx, in_ny, in_nz                       ! Grid count in x, y, and z
         ! Local Variables
@@ -925,7 +926,7 @@ contains
         totalmemoryusage = totalmemoryusage + 2.0_dp*real(in_nx*in_ny*in_nz,kind=dp)*real(sizeof(totalmemoryusage),kind=dp)   ! 2, nx*ny*nz arrays (sdf,flood_fill)
 
         ! Print to screen
-        write(stringmem,'(F5.2)') totalmemoryusage/1e9_dp
+        write(stringmem,'(F5.2)') (n_procs*totalmemoryusage)/1e9_dp
         print *, "-- Estimated Minimum Memory usage: ", trim(stringmem), " GiB(s)..."
 
     end subroutine estimated_memoryusage
