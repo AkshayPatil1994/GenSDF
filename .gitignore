@@ -9,7 +9,7 @@ src/data
 *.lo
 *.o
 *.obj
-src/gensdf
+
 
 # Precompiled Headers
 *.gch
@@ -31,6 +31,6 @@ src/gensdf
 *.lib
 
 # Executables
-*.exe
+gensdf_*
 *.out
 *.app
