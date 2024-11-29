@@ -71,18 +71,20 @@ program generatesdf
     ! Tag the min-max bounding box indices on the grid
     call tagminmax(myid,xf,yp,zp,bbox_min,bbox_max,nx,ny,nz,dx,dy,dz(2),buffer_points,sx,ex,sy,ey,sz,ez)
     ! Domain decomposition based on the extent of the bounding box (in x)
-    mpi_dx = ceiling(real((ex-sx+1),kind=dp)/real(nprocs,kind=dp))
+    mpi_dx = ceiling(real((ex-sx+1), kind=dp) / real(nprocs, kind=dp))  ! Compute chunk size
     decomp_x_start(0) = sx
-    decomp_x_end(0) = sx + mpi_dx 
-    decomp_size(0) = mpi_dx + 1
-    do ii=1,nprocs-2
+    decomp_x_end(0) = min(sx + mpi_dx - 1, ex)                        ! Ensure within bounds
+    decomp_size(0) = decomp_x_end(0) - decomp_x_start(0) + 1
+    
+    do ii = 1, nprocs-2
         decomp_x_start(ii) = decomp_x_end(ii-1) + 1
-        decomp_x_end(ii) = decomp_x_start(ii) + mpi_dx        
-        decomp_size(ii) = decomp_x_end(ii) - decomp_x_start(ii) + 1                 ! Size of the SDF array on proc - ii
+        decomp_x_end(ii) = min(decomp_x_start(ii) + mpi_dx - 1, ex)   ! Ensure within bounds
+        decomp_size(ii) = decomp_x_end(ii) - decomp_x_start(ii) + 1
     end do
+    
     decomp_x_start(nprocs-1) = decomp_x_end(nprocs-2) + 1
-    decomp_x_end(nprocs-1) = ex
-    decomp_size(nprocs-1) = decomp_x_end(nprocs-1) - decomp_x_start(nprocs-1) + 1   ! Size on the last array
+    decomp_x_end(nprocs-1) = ex                                       ! Ensure last processor ends at ex
+    decomp_size(nprocs-1) = decomp_x_end(nprocs-1) - decomp_x_start(nprocs-1) + 1
     ! Print the domain decomposition to screen (If DEBUG = .True.)
     if(debug) then
         if(myid == 0) print *, "*** Domain decomposition Details ***"
