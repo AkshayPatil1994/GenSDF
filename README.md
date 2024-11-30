@@ -1,4 +1,4 @@
-# Signed-Distance-Field
+# GenSDF - Signed-Distance-Field Generator
 MPI + Fortran based software to compute the signed-distance-field for OBJ file format geometry over cartesian grid. The code assumes regular grid along the streamwise and spanwise directions, while a non-uniform grid can be used in the vertical ($z$) direction.
 
 ## How to compile the code
