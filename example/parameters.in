@@ -7,4 +7,4 @@
 ! r0 (Origin of the computational grid)
 0.0 0.0 0.0
 ! non_uniform_grid
-0
+F
