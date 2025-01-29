@@ -594,7 +594,8 @@ contains
     subroutine fill_internal(grid, inx, iny, inz, sx, sy, sz, ex, ey, ez, large_negative_value)
         ! 
         ! This subroutine uses the flood-fill algorithm to fill in values inside the geometry
-        !        
+        ! ** Only positive values enclosed by negative values are replaced **
+        ! Fixed: 2025-01-29, Akshay
         implicit none
         ! Input
         integer, intent(in) :: inx, iny, inz                ! Number of grid points
@@ -614,21 +615,21 @@ contains
             0,  1,  0,  0, -1,  0, &    ! y+1, y-1
             0,  0,  1,  0,  0, -1], &   ! z+1, z-1
             shape=[3, n_dirs])
-    
+
         ! Allocate arrays
         allocate(visited(inx, iny, inz))
-        allocate(stack(3, (ex - sx + 1) * (ey - sy + 1) * (ez - sz + 1)))  ! Stack for flood fill, size large enough for the entire subregion
-    
+        allocate(stack(3, (ex - sx + 1) * (ey - sy + 1) * (ez - sz + 1)))  ! Stack for flood fill
+
         ! Initialize the visited array to false
         visited = .false.
-    
-        ! Mark all points on the boundaries of the subregion as starting points for exterior flood fill
+
+        ! Mark all points on the boundaries that have positive values as exterior
         top = 0
         do kk = sz, ez
             do jj = sy, ey
                 do ii = sx, ex
                     if (ii == sx .or. ii == ex .or. jj == sy .or. jj == ey .or. kk == sz .or. kk == ez) then
-                        if (grid(ii, jj, kk) >= 0.0_dp .and. .not. visited(ii, jj, kk)) then
+                        if (grid(ii, jj, kk) > 0.0_dp) then
                             ! Add boundary point to stack for flood fill
                             top = top + 1
                             stack(:, top) = [ii, jj, kk]
@@ -638,27 +639,27 @@ contains
                 end do
             end do
         end do
-    
-        ! Flood fill to mark all exterior points that are reachable from the boundary
+
+        ! Flood fill to mark all exterior positive points
         do while (top > 0)
             ! Pop the current point from the stack
             ci = stack(1, top)
             cj = stack(2, top)
             ck = stack(3, top)
             top = top - 1
-    
+
             ! Traverse all neighboring points
             do i_dir = 1, n_dirs
                 ni = ci + dirs(1, i_dir)
                 nj = cj + dirs(2, i_dir)
                 nk = ck + dirs(3, i_dir)
-    
-                ! Check if the neighbor is within bounds of the subregion
+
+                ! Check if the neighbor is within bounds
                 if (ni >= sx .and. ni <= ex .and. &
                     nj >= sy .and. nj <= ey .and. &
                     nk >= sz .and. nk <= ez) then
-    
-                    if (.not. visited(ni, nj, nk) .and. grid(ni, nj, nk) >= 0.0_dp) then
+                    
+                    if (.not. visited(ni, nj, nk) .and. grid(ni, nj, nk) > 0.0_dp) then
                         ! Mark as visited and add to stack
                         top = top + 1
                         stack(:, top) = [ni, nj, nk]
@@ -667,22 +668,22 @@ contains
                 end if
             end do
         end do
-    
-        ! Set a large value for points are never visited then require filling
+
+        ! Set a large negative value for positive points that were NOT visited (i.e., enclosed ones)
         do kk = sz, ez
             do jj = sy, ey
                 do ii = sx, ex                    
-                    if (.not. visited(ii, jj, kk)) then
+                    if (.not. visited(ii, jj, kk) .and. grid(ii, jj, kk) > 0.0_dp) then
                         grid(ii, jj, kk) = large_negative_value
                     end if
                 end do
             end do
         end do
-    
+
         ! Deallocate arrays
         deallocate(visited)
         deallocate(stack)
-    
+
     end subroutine fill_internal
 
     subroutine distance_point_to_triangle(point, vert0, vert1, vert2, avg_normal, dist_to_face)
